@@ -9,7 +9,7 @@ import {
 } from "motion/react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
-import { Dialog, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
+import { Dialog, DialogPortal } from "@/components/ui/dialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { useOverlay } from "./overlay-provider";
@@ -29,8 +29,6 @@ const drawerSpring = {
   damping: 30,
   mass: 0.8,
 } as const;
-
-const reducedMotion = { duration: 0.01 };
 
 /**
  * Variants for the dialog container (fade in/out)
@@ -84,32 +82,20 @@ const drawerContainerVariants: Variants = {
 };
 
 /**
- * Slide variants that use custom prop for direction
- * custom > 0: pushing (new from right, old exits left)
- * custom < 0: popping (new from left, old exits right)
+ * Get x position for overlay item based on its position relative to current
  */
-const createSlideVariants = (shouldReduceMotion: boolean | null): Variants => ({
-  enter: (direction: number) => ({
-    x: direction > 0 ? "100%" : "-35%",
-    scale: direction > 0 ? 1 : 0.94,
-    opacity: direction > 0 ? 1 : 0,
-  }),
-  center: {
-    x: "0%",
-    scale: 1,
-    opacity: 1,
-    transition: shouldReduceMotion ? reducedMotion : iosSpring,
-  },
-  exit: (direction: number) => ({
-    x: direction > 0 ? "-35%" : "100%",
-    scale: direction > 0 ? 0.94 : 1,
-    opacity: direction > 0 ? 0 : 1,
-    transition: shouldReduceMotion ? reducedMotion : iosSpring,
-  }),
-});
+function getOverlayXPosition(
+  isCurrent: boolean,
+  isPrevious: boolean
+): "0%" | "-35%" | "100%" {
+  if (isCurrent) return "0%";
+  if (isPrevious) return "-35%";
+  return "100%";
+}
 
 /**
- * Hook to track direction of stack changes
+ * Hook to track direction of stack changes (push vs pop)
+ * Returns 1 for push, -1 for pop
  */
 function useStackDirection(stackLength: number) {
   const prevLength = useRef(stackLength);
@@ -117,9 +103,9 @@ function useStackDirection(stackLength: number) {
 
   // Compute synchronously during render for immediate value
   if (stackLength > prevLength.current) {
-    direction.current = 1;
+    direction.current = 1; // pushing
   } else if (stackLength < prevLength.current) {
-    direction.current = -1;
+    direction.current = -1; // popping
   }
 
   // Update prevLength after render
@@ -132,16 +118,37 @@ function useStackDirection(stackLength: number) {
 
 /**
  * Desktop dialog container with internal sliding content
+ * Renders all stack items persistently in the same React tree location,
+ * using CSS transforms to animate visibility while preserving component state
  */
 function DesktopOverlayContainer() {
   const { stack, closeAll, pop } = useOverlay();
   const shouldReduceMotion = useReducedMotion();
   const [minHeight, setMinHeight] = useState<number>(0);
-  const direction = useStackDirection(stack.length);
   const contentRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
+  const frozenStackRef = useRef(stack);
+  const direction = useStackDirection(stack.length);
 
   const isOpen = stack.length > 0;
+
+  // Freeze the stack when open so content doesn't shift during exit animation
+  // AnimatePresence keeps children mounted during exit, so frozenStack is used then
+  if (isOpen) {
+    frozenStackRef.current = stack;
+  }
+
+  // Use frozen stack for rendering (preserves content during exit)
+  const renderStack = frozenStackRef.current;
+  const currentIndex = renderStack.length - 1;
+
+  // DEBUG
+  console.log("[DesktopOverlay]", {
+    isOpen,
+    stackLength: stack.length,
+    frozenStackLength: frozenStackRef.current.length,
+    renderStackLength: renderStack.length,
+  });
 
   // Measure content height when it changes, reset on fresh open
   useLayoutEffect(() => {
@@ -161,8 +168,10 @@ function DesktopOverlayContainer() {
     }
   }, [stack, isOpen]);
 
+  // Use live stack for options checks (only when open)
   const currentItem = stack[stack.length - 1];
-  const slideVariants = createSlideVariants(shouldReduceMotion);
+  const springTransition = shouldReduceMotion ? { duration: 0.01 } : iosSpring;
+  const isPushing = direction === 1;
 
   const handleBackdropClick = useCallback(() => {
     if (currentItem?.options.closeOnBackdropClick !== false) {
@@ -186,22 +195,32 @@ function DesktopOverlayContainer() {
     }
   }, [isOpen, handleEscapeKey]);
 
+  const handleExitComplete = useCallback(() => {
+    console.log("[DesktopOverlay] handleExitComplete called");
+    frozenStackRef.current = [];
+  }, []);
+
+  console.log("[DesktopOverlay] Rendering, isOpen:", isOpen);
+
+  // Don't render Dialog at all when closed - this ensures clean unmount
+  if (!isOpen && frozenStackRef.current.length === 0) {
+    return null;
+  }
+
   return (
-    <Dialog open={isOpen}>
-      <AnimatePresence>
-        {isOpen && (
+    <AnimatePresence onExitComplete={handleExitComplete}>
+      {isOpen && (
+        <Dialog modal={false} open>
           <DialogPortal forceMount>
-            {/* Backdrop */}
-            <DialogOverlay asChild>
-              <motion.div
-                animate={{ opacity: 1 }}
-                className="fixed inset-0 z-50 bg-black/60"
-                exit={{ opacity: 0 }}
-                initial={{ opacity: 0 }}
-                onClick={handleBackdropClick}
-                transition={{ duration: 0.2 }}
-              />
-            </DialogOverlay>
+            {/* Backdrop - standalone clickable div */}
+            <motion.div
+              animate={{ opacity: 1 }}
+              className="fixed inset-0 z-50 bg-black/60"
+              exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }}
+              onClick={handleBackdropClick}
+              transition={{ duration: 0.2 }}
+            />
 
             {/* Dialog container */}
             <motion.div
@@ -214,57 +233,82 @@ function DesktopOverlayContainer() {
               <LayoutGroup>
                 <motion.div
                   className="relative overflow-hidden rounded-xl border bg-background shadow-2xl ring-1 ring-black/5"
-                  layout
+                  layout={isOpen}
                   style={{ minHeight: minHeight > 0 ? minHeight : "auto" }}
                   transition={iosSpring}
                 >
-                  {/* Content area - ref on wrapper div to avoid React 19 issues */}
-                  <div ref={contentRef}>
-                    <AnimatePresence
-                      custom={direction}
-                      initial={false}
-                      mode="popLayout"
-                    >
-                      {currentItem && (
+                  {/* Content area - all items rendered persistently to preserve state */}
+                  <div className="relative" ref={contentRef}>
+                    {renderStack.map((item, index) => {
+                      const isCurrent = index === currentIndex;
+                      const isPrevious = index < currentIndex;
+
+                      // For push onto existing stack: new current item slides in from right
+                      // For first overlay (fresh open): no slide, dialog container handles entrance
+                      // For pop: returning item is already at -35%, animates to 0%
+                      const shouldSlideIn =
+                        isCurrent && isPushing && renderStack.length > 1;
+                      const initialValue = shouldSlideIn
+                        ? { x: "100%", scale: 1, opacity: 1 }
+                        : false;
+
+                      return (
                         <motion.div
-                          animate="center"
-                          className="w-full"
-                          custom={direction}
-                          exit="exit"
-                          initial="enter"
-                          key={currentItem.id}
-                          variants={slideVariants}
+                          animate={{
+                            x: getOverlayXPosition(isCurrent, isPrevious),
+                            scale: isCurrent ? 1 : 0.94,
+                            opacity: isCurrent ? 1 : 0,
+                          }}
+                          aria-hidden={!isCurrent}
+                          className={cn(
+                            "w-full",
+                            isCurrent
+                              ? "relative"
+                              : "pointer-events-none absolute inset-0"
+                          )}
+                          initial={initialValue}
+                          key={item.id}
+                          transition={springTransition}
                         >
-                          <currentItem.component
-                            overlayId={currentItem.id}
-                            {...currentItem.props}
-                          />
+                          <item.component overlayId={item.id} {...item.props} />
                         </motion.div>
-                      )}
-                    </AnimatePresence>
+                      );
+                    })}
                   </div>
                 </motion.div>
               </LayoutGroup>
             </motion.div>
           </DialogPortal>
-        )}
-      </AnimatePresence>
-    </Dialog>
+        </Dialog>
+      )}
+    </AnimatePresence>
   );
 }
 
 /**
  * Mobile drawer container with internal sliding content
+ * Renders all stack items persistently in the same React tree location,
+ * using CSS transforms to animate visibility while preserving component state
  */
 function MobileOverlayContainer() {
   const { stack, closeAll, pop } = useOverlay();
   const shouldReduceMotion = useReducedMotion();
   const [minHeight, setMinHeight] = useState<number>(0);
-  const direction = useStackDirection(stack.length);
   const contentRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
+  const frozenStackRef = useRef(stack);
+  const direction = useStackDirection(stack.length);
 
   const isOpen = stack.length > 0;
+
+  // Freeze the stack when open so content doesn't shift during exit animation
+  if (isOpen) {
+    frozenStackRef.current = stack;
+  }
+
+  // Use frozen stack for rendering (preserves content during exit)
+  const renderStack = frozenStackRef.current;
+  const currentIndex = renderStack.length - 1;
 
   // Measure content height when it changes, reset on fresh open
   useLayoutEffect(() => {
@@ -284,14 +328,11 @@ function MobileOverlayContainer() {
     }
   }, [stack, isOpen]);
 
+  // Use live stack for options checks (only when open)
   const currentItem = stack[stack.length - 1];
-  const slideVariants = createSlideVariants(shouldReduceMotion);
-
-  const handleBackdropClick = useCallback(() => {
-    if (currentItem?.options.closeOnBackdropClick !== false) {
-      closeAll();
-    }
-  }, [currentItem?.options.closeOnBackdropClick, closeAll]);
+  const renderCurrentItem = renderStack[currentIndex];
+  const springTransition = shouldReduceMotion ? { duration: 0.01 } : iosSpring;
+  const isPushing = direction === 1;
 
   const handleEscapeKey = useCallback(
     (e: KeyboardEvent) => {
@@ -309,86 +350,95 @@ function MobileOverlayContainer() {
     }
   }, [isOpen, handleEscapeKey]);
 
+  // Clear frozen stack after drawer closes
+  const handleAnimationEnd = useCallback(() => {
+    if (!isOpen) {
+      frozenStackRef.current = [];
+    }
+  }, [isOpen]);
+
   return (
-    <DrawerPrimitive.Root open={isOpen}>
-      <AnimatePresence>
-        {isOpen && (
-          <DrawerPrimitive.Portal forceMount>
-            {/* Backdrop */}
-            <DrawerPrimitive.Overlay asChild forceMount>
-              <motion.div
-                animate={{ opacity: 1 }}
-                className="fixed inset-0 z-50 bg-black/60"
-                exit={{ opacity: 0 }}
-                initial={{ opacity: 0 }}
-                onClick={handleBackdropClick}
-                transition={{ duration: 0.25 }}
-              />
-            </DrawerPrimitive.Overlay>
+    <DrawerPrimitive.Root
+      onAnimationEnd={handleAnimationEnd}
+      onOpenChange={(open) => {
+        if (!open) {
+          closeAll();
+        }
+      }}
+      open={isOpen}
+    >
+      <DrawerPrimitive.Portal>
+        {/* Backdrop - let Vaul handle animations */}
+        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60" />
 
-            {/* Drawer container */}
-            <DrawerPrimitive.Content asChild forceMount>
-              <motion.div
-                animate="visible"
-                className={cn(
-                  "fixed inset-x-0 bottom-0 z-50 flex max-h-[90vh] flex-col",
-                  "rounded-t-2xl border-t bg-background shadow-2xl"
-                )}
-                exit="exit"
-                initial="hidden"
-                variants={drawerContainerVariants}
-              >
-                {/* Accessible title for screen readers */}
-                <DrawerPrimitive.Title className="sr-only">
-                  {currentItem?.options.title || "Dialog"}
-                </DrawerPrimitive.Title>
+        {/* Drawer container - let Vaul handle open/close animations */}
+        <DrawerPrimitive.Content
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-50 flex max-h-[90vh] flex-col",
+            "rounded-t-2xl border-t bg-background shadow-2xl"
+          )}
+        >
+          {/* Accessible title for screen readers */}
+          <DrawerPrimitive.Title className="sr-only">
+            {renderCurrentItem?.options.title || "Dialog"}
+          </DrawerPrimitive.Title>
 
-                {/* Drag handle */}
-                <div className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-muted-foreground/20" />
+          {/* Drag handle */}
+          <div className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-muted-foreground/20" />
 
-                {/* Content area with height animation */}
-                <LayoutGroup>
-                  <motion.div
-                    className="relative flex-1 overflow-hidden"
-                    layout
-                    style={{ minHeight: minHeight > 0 ? minHeight : "auto" }}
-                    transition={drawerSpring}
-                  >
-                    {/* Content wrapper */}
-                    <div ref={contentRef}>
-                      <AnimatePresence
-                        custom={direction}
-                        initial={false}
-                        mode="popLayout"
-                      >
-                        {currentItem && (
-                          <motion.div
-                            animate="center"
-                            className="w-full"
-                            custom={direction}
-                            exit="exit"
-                            initial="enter"
-                            key={currentItem.id}
-                            variants={slideVariants}
-                          >
-                            <currentItem.component
-                              overlayId={currentItem.id}
-                              {...currentItem.props}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  </motion.div>
-                </LayoutGroup>
+          {/* Content area with height animation */}
+          <LayoutGroup>
+            <motion.div
+              className="relative flex-1 overflow-hidden"
+              layout={isOpen}
+              style={{ minHeight: minHeight > 0 ? minHeight : "auto" }}
+              transition={drawerSpring}
+            >
+              {/* Content wrapper - all items rendered persistently to preserve state */}
+              <div className="relative" ref={contentRef}>
+                {renderStack.map((item, index) => {
+                  const isCurrent = index === currentIndex;
+                  const isPrevious = index < currentIndex;
 
-                {/* Safe area padding for iOS */}
-                <div className="h-safe-area-inset-bottom" />
-              </motion.div>
-            </DrawerPrimitive.Content>
-          </DrawerPrimitive.Portal>
-        )}
-      </AnimatePresence>
+                  // For push onto existing stack: new current item slides in from right
+                  // For first overlay (fresh open): no slide, drawer container handles entrance
+                  // For pop: returning item is already at -35%, animates to 0%
+                  const shouldSlideIn =
+                    isCurrent && isPushing && renderStack.length > 1;
+                  const initialValue = shouldSlideIn
+                    ? { x: "100%", scale: 1, opacity: 1 }
+                    : false;
+
+                  return (
+                    <motion.div
+                      animate={{
+                        x: getOverlayXPosition(isCurrent, isPrevious),
+                        scale: isCurrent ? 1 : 0.94,
+                        opacity: isCurrent ? 1 : 0,
+                      }}
+                      aria-hidden={!isCurrent}
+                      className={cn(
+                        "w-full",
+                        isCurrent
+                          ? "relative"
+                          : "pointer-events-none absolute inset-0"
+                      )}
+                      initial={initialValue}
+                      key={item.id}
+                      transition={springTransition}
+                    >
+                      <item.component overlayId={item.id} {...item.props} />
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </LayoutGroup>
+
+          {/* Safe area padding for iOS */}
+          <div className="h-safe-area-inset-bottom" />
+        </DrawerPrimitive.Content>
+      </DrawerPrimitive.Portal>
     </DrawerPrimitive.Root>
   );
 }

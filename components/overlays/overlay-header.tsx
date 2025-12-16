@@ -42,18 +42,13 @@ export function OverlayHeader({
   };
 
   return (
-    <div
-      className={cn(
-        "relative flex flex-col gap-1.5 p-6 pb-0",
-        showBackButton && "pl-4",
-        className
-      )}
-    >
-      <div className="flex items-center gap-2">
+    <div className={cn("relative flex flex-col gap-1.5 p-6 pb-0", className)}>
+      {/* Fixed min-height to prevent layout shift when back button appears */}
+      <div className="flex min-h-8 items-center gap-2">
         {showBackButton && (
           <Button
             aria-label="Go back"
-            className="size-8 shrink-0"
+            className="ml-[-8px] size-8 shrink-0"
             onClick={handleBack}
             size="icon"
             variant="ghost"
