@@ -48,9 +48,6 @@ next-env.d.ts
 
 tmp/
 
-# claude
-.claude/
-
 # generated files
 lib/types/integration.ts
 lib/codegen-registry.ts
