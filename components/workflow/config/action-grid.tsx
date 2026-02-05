@@ -158,10 +158,10 @@ export function ActionGrid({
 }: ActionGridProps) {
   const [filter, setFilter] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    new Set(),
+    new Set()
   );
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(
-    getInitialHiddenGroups,
+    getInitialHiddenGroups
   );
   const [showHidden, setShowHidden] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
@@ -359,13 +359,13 @@ export function ActionGrid({
           >
             {filteredActions
               .filter(
-                (action) => showHidden || !hiddenGroups.has(action.category),
+                (action) => showHidden || !hiddenGroups.has(action.category)
               )
               .map((action) => (
                 <button
                   className={cn(
                     "flex aspect-square flex-col items-center justify-center gap-1.5 rounded-lg border border-transparent p-2 text-center transition-colors hover:border-border hover:bg-muted",
-                    disabled && "pointer-events-none opacity-50",
+                    disabled && "pointer-events-none opacity-50"
                   )}
                   data-testid={`action-option-${action.id.toLowerCase().replace(/\s+/g, "-")}`}
                   disabled={disabled}
@@ -394,7 +394,7 @@ export function ActionGrid({
                 <div
                   className={cn(
                     "sticky top-0 z-10 mb-1 flex items-center gap-2 bg-background px-3 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wider",
-                    isHidden && "opacity-50",
+                    isHidden && "opacity-50"
                   )}
                 >
                   <button
@@ -405,7 +405,7 @@ export function ActionGrid({
                     <ChevronRight
                       className={cn(
                         "size-3.5 transition-transform",
-                        !isCollapsed && "rotate-90",
+                        !isCollapsed && "rotate-90"
                       )}
                     />
                     <GroupIcon group={group} />
@@ -444,7 +444,7 @@ export function ActionGrid({
                     <button
                       className={cn(
                         "flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
-                        disabled && "pointer-events-none opacity-50",
+                        disabled && "pointer-events-none opacity-50"
                       )}
                       data-testid={`action-option-${action.id.toLowerCase().replace(/\s+/g, "-")}`}
                       disabled={disabled}
