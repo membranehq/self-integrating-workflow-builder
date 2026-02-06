@@ -36,6 +36,27 @@
       "when": 1765834764376,
       "tag": "0004_real_wither",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1770381787377,
+      "tag": "0005_medical_mystique",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1770382342062,
+      "tag": "0006_exotic_kate_bishop",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1770390642735,
+      "tag": "0007_bizarre_mentor",
+      "breakpoints": true
     }
   ]
 }

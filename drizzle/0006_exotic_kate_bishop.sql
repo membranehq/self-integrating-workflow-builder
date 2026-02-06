@@ -1,0 +1,1 @@
+ALTER TABLE "membrane_services" ADD COLUMN "external_app_id" text;

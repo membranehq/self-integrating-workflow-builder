@@ -10,6 +10,7 @@ import { GitHubStarsLoader } from "@/components/github-stars-loader";
 import { GitHubStarsProvider } from "@/components/github-stars-provider";
 import { GlobalModals } from "@/components/global-modals";
 import { OverlayProvider } from "@/components/overlays/overlay-provider";
+import { MembraneProvider } from "@/components/providers/membrane-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { PersistentCanvas } from "@/components/workflow/persistent-canvas";
@@ -55,6 +56,7 @@ const RootLayout = ({ children }: RootLayoutProps) => (
       >
         <Provider>
           <AuthProvider>
+            <MembraneProvider>
             <OverlayProvider>
               <Suspense
                 fallback={
@@ -70,6 +72,7 @@ const RootLayout = ({ children }: RootLayoutProps) => (
               <Toaster />
               <GlobalModals />
             </OverlayProvider>
+            </MembraneProvider>
           </AuthProvider>
         </Provider>
       </ThemeProvider>

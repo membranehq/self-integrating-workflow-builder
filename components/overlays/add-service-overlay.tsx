@@ -6,27 +6,57 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useConnectibles } from "@/hooks/use-connectibles";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useMembraneIntegrations } from "@/hooks/use-membrane-integrations";
 import type { Connectible } from "@/lib/types/connectible";
 import { Overlay } from "./overlay";
 import { useOverlay } from "./overlay-provider";
 
 type AddServiceOverlayProps = {
   overlayId: string;
-  onSelect?: (connectible: Connectible) => void;
 };
 
-export function AddServiceOverlay({
-  overlayId,
-  onSelect,
-}: AddServiceOverlayProps) {
+export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
   const { closeAll } = useOverlay();
+  const { refetch } = useMembraneIntegrations();
   const [search, setSearch] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
   const debouncedSearch = useDebounce(search, 300);
 
   const { connectibles, isLoading, error } = useConnectibles({
     search: debouncedSearch,
     enabled: true,
   });
+
+  const handleSelect = async (connectible: Connectible) => {
+    setIsAdding(true);
+    try {
+      const response = await fetch("/api/membrane/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: connectible.name,
+          logoUri: connectible.logoUri,
+          connectorId:
+            connectible.connectParameters.connectorId ||
+            connectible.connector?.id,
+          integrationKey: connectible.integration?.key,
+          externalAppId: connectible.externalApp?.id,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to create integration");
+        return;
+      }
+
+      await refetch();
+      closeAll();
+    } catch (err) {
+      console.error("Failed to add service:", err);
+    } finally {
+      setIsAdding(false);
+    }
+  };
 
   return (
     <Overlay
@@ -40,6 +70,7 @@ export function AddServiceOverlay({
           <Input
             autoFocus
             className="pl-9"
+            disabled={isAdding}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search services..."
             value={search}
@@ -47,7 +78,11 @@ export function AddServiceOverlay({
         </div>
 
         <div className="max-h-[300px] overflow-y-auto">
-          {isLoading ? (
+          {isAdding ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner />
+            </div>
+          ) : isLoading ? (
             <div className="flex items-center justify-center py-8">
               <Spinner />
             </div>
@@ -82,7 +117,7 @@ export function AddServiceOverlay({
                   <button
                     className="relative flex flex-col items-center gap-2 rounded-lg p-3 transition-colors hover:bg-muted"
                     key={id}
-                    onClick={() => onSelect?.(connectible)}
+                    onClick={() => handleSelect(connectible)}
                     type="button"
                   >
                     <div className="relative size-10">

@@ -248,6 +248,12 @@ async function executeActionStep(input: {
     });
   }
 
+  // Check Membrane actions (membrane:{serviceId}:{actionKey})
+  if (actionType.startsWith("membrane:")) {
+    const { membraneActionStep } = await import("./steps/membrane-action");
+    return await membraneActionStep(stepInput as import("./steps/membrane-action").MembraneActionInput);
+  }
+
   // Check system actions first (Database Query, HTTP Request)
   const systemAction = SYSTEM_ACTIONS[actionType];
   if (systemAction) {

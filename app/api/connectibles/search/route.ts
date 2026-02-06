@@ -103,8 +103,9 @@ export async function GET(request: Request) {
     const connectorById = new Map<string, Record<string, unknown>>();
 
     for (const el of appElements) {
-      const id = (el.uuid as string) || (el.id as string);
-      if (id) appById.set(id, el);
+      // Index by both uuid and id so integrations can look up by appUuid
+      if (el.uuid) appById.set(el.uuid as string, el);
+      if (el.id) appById.set(el.id as string, el);
     }
     for (const el of connectorElements) {
       if (el.id) connectorById.set(el.id as string, el);
@@ -150,15 +151,19 @@ export async function GET(request: Request) {
 
     // 2. External apps (can be used to create integrations)
     for (const el of appElements) {
-      const appId = (el.uuid as string) || (el.id as string);
+      const appObjectId = el.id as string;
+      const appUuid = el.uuid as string | undefined;
       if (!el.defaultConnectorId) continue;
 
+      // Check if already covered by an integration (integrations reference apps by uuid)
       const hasIntegration = connectibles.some(
-        (c) => c.externalApp?.id === appId
+        (c) =>
+          c.externalApp?.id === appObjectId ||
+          (appUuid && c.externalApp?.id === appUuid)
       );
       if (hasIntegration) continue;
 
-      const key = `app:${appId}`;
+      const key = `app:${appObjectId}`;
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
 
@@ -169,7 +174,7 @@ export async function GET(request: Request) {
         logoUri: el.logoUri as string | undefined,
         connectParameters: { connectorId: el.defaultConnectorId as string },
         externalApp: {
-          id: appId,
+          id: appObjectId,
           key: el.key as string | undefined,
           name: el.name as string | undefined,
         },

@@ -1,8 +1,8 @@
 "use client";
 
 import { useAtomValue, useSetAtom } from "jotai";
-import { HelpCircle, Plus, Settings } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Check, HelpCircle, Plus, Settings } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfigureConnectionOverlay } from "@/components/overlays/add-connection-overlay";
 import { AiGatewayConsentOverlay } from "@/components/overlays/ai-gateway-consent-overlay";
 import { useOverlay } from "@/components/overlays/overlay-provider";
@@ -26,16 +26,21 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useIntegrationApp } from "@membranehq/react";
+import { useMembraneActions } from "@/hooks/use-membrane-actions";
+import { useMembraneIntegrations } from "@/hooks/use-membrane-integrations";
 import { aiGatewayStatusAtom } from "@/lib/ai-gateway/state";
 import {
   integrationsAtom,
   integrationsVersionAtom,
 } from "@/lib/integrations-store";
+import { openMembraneConnection } from "@/lib/membrane-connect";
 import type { IntegrationType } from "@/lib/types/integration";
 import {
   findActionById,
   getActionsByCategory,
   getAllIntegrations,
+  type ActionConfigFieldBase,
 } from "@/plugins";
 import { ActionConfigRenderer } from "./action-config-renderer";
 import { SchemaBuilder, type SchemaField } from "./schema-builder";
@@ -331,6 +336,227 @@ function normalizeActionType(actionType: string): string {
   return actionType;
 }
 
+/**
+ * Convert a Membrane action's inputSchema into ActionConfigFieldBase[] for rendering.
+ */
+function inputSchemaToFields(
+  inputSchema: NonNullable<import("@/hooks/use-membrane-actions").MembraneAction["inputSchema"]>
+): ActionConfigFieldBase[] {
+  const properties = inputSchema.properties || {};
+  const required = new Set(inputSchema.required || []);
+
+  return Object.entries(properties).map(([key, prop]) => {
+    const fieldType = prop.type;
+    let type: ActionConfigFieldBase["type"] = "template-input";
+
+    if (fieldType === "number" || fieldType === "integer") {
+      type = "number";
+    } else if (fieldType === "boolean") {
+      type = "select";
+    } else if (fieldType === "array" || fieldType === "object") {
+      type = "template-textarea";
+    }
+
+    const field: ActionConfigFieldBase = {
+      key: `membraneInput.${key}`,
+      label: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      type,
+      placeholder: prop.description || undefined,
+      required: required.has(key),
+    };
+
+    if (fieldType === "boolean") {
+      field.options = [
+        { label: "true", value: "true" },
+        { label: "false", value: "false" },
+      ];
+    }
+
+    return field;
+  });
+}
+
+/**
+ * Membrane action config: connection status + dynamic fields from inputSchema.
+ */
+function MembraneActionConfig({
+  config,
+  onUpdateConfig,
+  disabled,
+}: {
+  config: Record<string, unknown>;
+  onUpdateConfig: (key: string, value: string) => void;
+  disabled: boolean;
+}) {
+  const { services, refetch } = useMembraneIntegrations();
+  const integrationApp = useIntegrationApp();
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  // Parse service ID and action key from actionType
+  const actionType = (config?.actionType as string) || "";
+  const { serviceId, actionKey } = useMemo(() => {
+    const rest = actionType.slice("membrane:".length);
+    const colonIdx = rest.indexOf(":");
+    return {
+      serviceId: colonIdx >= 0 ? rest.slice(0, colonIdx) : rest,
+      actionKey: colonIdx >= 0 ? rest.slice(colonIdx + 1) : undefined,
+    };
+  }, [actionType]);
+
+  const service = services.find((s) => s.id === serviceId);
+  const { actions, isLoading: actionsLoading } = useMembraneActions(
+    service?.externalAppId
+  );
+
+  // Find the selected action's metadata
+  const selectedAction = useMemo(
+    () => actions.find((a) => a.key === actionKey),
+    [actions, actionKey]
+  );
+
+  // Convert inputSchema to config fields
+  const configFields = useMemo(() => {
+    if (!selectedAction?.inputSchema) return [];
+    return inputSchemaToFields(selectedAction.inputSchema);
+  }, [selectedAction]);
+
+  const handleConnect = useCallback(async () => {
+    if (!service?.connectorId || !integrationApp) return;
+    setIsConnecting(true);
+    try {
+      const result = await openMembraneConnection(integrationApp, service.connectorId);
+      if (result?.connectionId) {
+        // Persist connectionId to database
+        await fetch("/api/membrane/integrations", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: service.id,
+            connectionId: result.connectionId,
+          }),
+        });
+        await refetch();
+      }
+    } catch (err) {
+      console.error("[Membrane Connect] Error:", err);
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [service, integrationApp, refetch]);
+
+  const handlePluginUpdateConfig = (key: string, value: unknown) => {
+    onUpdateConfig(key, String(value));
+  };
+
+  if (!service) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        Membrane service not found
+      </p>
+    );
+  }
+
+  const serviceName = (config?.membraneName as string) || service.name;
+  const logoUri = (config?.membraneLogoUri as string) || service.logoUri;
+  const actionName =
+    selectedAction?.name ||
+    (config?.membraneActionName as string) ||
+    actionKey ||
+    "Action";
+  const isConnected = !!service.connectionId;
+
+  return (
+    <>
+      {/* Header: Service + Action */}
+      <div className="flex items-center gap-3 rounded-md border px-3 py-2">
+        {logoUri ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            alt={serviceName}
+            className="size-5 rounded object-contain"
+            src={logoUri}
+          />
+        ) : (
+          <div className="flex size-5 items-center justify-center rounded bg-muted font-medium text-muted-foreground text-xs">
+            {serviceName[0]}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <span className="font-medium text-sm">{serviceName}</span>
+          <span className="text-muted-foreground text-sm"> / {actionName}</span>
+        </div>
+        <span className="rounded bg-purple-100 px-1.5 py-0.5 font-medium text-purple-700 text-[10px] dark:bg-purple-900/30 dark:text-purple-300">
+          Membrane
+        </span>
+      </div>
+
+      {/* Connection Section */}
+      <div className="space-y-2">
+        <Label className="ml-1">Account</Label>
+        {isConnected ? (
+          <div className="flex items-center justify-between rounded-md border px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Check className="size-4 text-green-600" />
+              <span className="text-sm">Connected to {serviceName}</span>
+            </div>
+            <Button
+              disabled={disabled || isConnecting || !service.connectorId || !integrationApp}
+              onClick={handleConnect}
+              size="sm"
+              variant="outline"
+            >
+              {isConnecting ? "Reconnecting..." : "Reconnect"}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            className="w-full justify-start gap-2 border-orange-500/50 bg-orange-500/10 text-orange-600 hover:bg-orange-500/20"
+            disabled={disabled || isConnecting || !service.connectorId || !integrationApp}
+            onClick={handleConnect}
+            variant="outline"
+          >
+            <AlertTriangle className="size-4" />
+            <span>
+              {isConnecting
+                ? "Connecting..."
+                : `Connect ${serviceName} account`}
+            </span>
+            <Plus className="ml-auto size-4" />
+          </Button>
+        )}
+        {!service.connectorId && (
+          <p className="text-muted-foreground text-xs">
+            No connector available for this service. Connection cannot be
+            established.
+          </p>
+        )}
+      </div>
+
+      {/* Config Fields (only when connected) */}
+      {isConnected && (
+        <>
+          {actionsLoading ? (
+            <p className="text-muted-foreground text-xs">
+              Loading action configuration...
+            </p>
+          ) : configFields.length > 0 ? (
+            <ActionConfigRenderer
+              config={config}
+              disabled={disabled}
+              fields={configFields}
+              onUpdateConfig={handlePluginUpdateConfig}
+            />
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              No configuration fields for this action
+            </p>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 export function ActionConfig({
   config,
   onUpdateConfig,
@@ -338,6 +564,7 @@ export function ActionConfig({
   isOwner = true,
 }: ActionConfigProps) {
   const actionType = (config?.actionType as string) || "";
+  const isMembrane = actionType.startsWith("membrane:");
   const categories = useCategoryData();
   const integrations = useMemo(() => getAllIntegrations(), []);
 
@@ -432,6 +659,16 @@ export function ActionConfig({
       openConnectionOverlay();
     }
   };
+
+  if (isMembrane) {
+    return (
+      <MembraneActionConfig
+        config={config}
+        disabled={disabled}
+        onUpdateConfig={onUpdateConfig}
+      />
+    );
+  }
 
   return (
     <>
