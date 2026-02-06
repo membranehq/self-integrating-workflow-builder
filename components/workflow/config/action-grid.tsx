@@ -27,6 +27,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AddServiceOverlay } from "@/components/overlays/add-service-overlay";
+import { useOverlay } from "@/components/overlays/overlay-provider";
 import { useIsTouch } from "@/hooks/use-touch";
 import { cn } from "@/lib/utils";
 import { getAllActions } from "@/plugins";
@@ -168,6 +170,7 @@ export function ActionGrid({
   const actions = useAllActions();
   const inputRef = useRef<HTMLInputElement>(null);
   const isTouch = useIsTouch();
+  const overlay = useOverlay();
 
   const toggleViewMode = () => {
     const newMode = viewMode === "list" ? "grid" : "list";
@@ -318,7 +321,7 @@ export function ActionGrid({
       <button
         className="flex shrink-0 items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors hover:bg-muted"
         onClick={() => {
-          // TODO: Implement add service functionality
+          overlay.open(AddServiceOverlay);
         }}
         type="button"
       >
