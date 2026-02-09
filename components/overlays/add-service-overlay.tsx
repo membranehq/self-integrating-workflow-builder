@@ -1,6 +1,6 @@
 "use client";
 
-import { Plug, Search } from "lucide-react";
+import { Plug, Search, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -8,6 +8,7 @@ import { useConnectibles } from "@/hooks/use-connectibles";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useMembraneIntegrations } from "@/hooks/use-membrane-integrations";
 import type { Connectible } from "@/lib/types/connectible";
+import { BuildIntegrationOverlay } from "./build-integration-overlay";
 import { Overlay } from "./overlay";
 import { useOverlay } from "./overlay-provider";
 
@@ -16,7 +17,7 @@ type AddServiceOverlayProps = {
 };
 
 export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
-  const { closeAll } = useOverlay();
+  const { closeAll, push } = useOverlay();
   const { refetch } = useMembraneIntegrations();
   const [search, setSearch] = useState("");
   const [isAdding, setIsAdding] = useState(false);
@@ -26,6 +27,10 @@ export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
     search: debouncedSearch,
     enabled: true,
   });
+
+  const handleBuildIntegration = () => {
+    push(BuildIntegrationOverlay, { initialAppName: search.trim() });
+  };
 
   const handleSelect = async (connectible: Connectible) => {
     setIsAdding(true);
@@ -95,57 +100,73 @@ export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
                 Please try again
               </p>
             </div>
-          ) : connectibles.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground text-sm">
-              No services found
-            </p>
           ) : (
-            <div
-              className="grid gap-2"
-              style={{
-                gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
-              }}
-            >
-              {connectibles.map((connectible) => {
-                const id =
-                  connectible.integration?.id ||
-                  connectible.externalApp?.id ||
-                  connectible.connector?.id ||
-                  connectible.name;
+            <>
+              {connectibles.length === 0 ? (
+                <p className="py-4 text-center text-muted-foreground text-sm">
+                  No services found
+                </p>
+              ) : (
+                <div
+                  className="grid gap-2"
+                  style={{
+                    gridTemplateColumns:
+                      "repeat(auto-fill, minmax(80px, 1fr))",
+                  }}
+                >
+                  {connectibles.map((connectible) => {
+                    const id =
+                      connectible.integration?.id ||
+                      connectible.externalApp?.id ||
+                      connectible.connector?.id ||
+                      connectible.name;
 
-                return (
-                  <button
-                    className="relative flex flex-col items-center gap-2 rounded-lg p-3 transition-colors hover:bg-muted"
-                    key={id}
-                    onClick={() => handleSelect(connectible)}
-                    type="button"
-                  >
-                    <div className="relative size-10">
-                      {connectible.logoUri ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          alt={`${connectible.name} logo`}
-                          className="size-full rounded object-contain"
-                          src={connectible.logoUri}
-                        />
-                      ) : (
-                        <div className="flex size-full items-center justify-center rounded bg-muted font-medium text-muted-foreground text-lg">
-                          {connectible.name[0]}
+                    return (
+                      <button
+                        className="relative flex flex-col items-center gap-2 rounded-lg p-3 transition-colors hover:bg-muted"
+                        key={id}
+                        onClick={() => handleSelect(connectible)}
+                        type="button"
+                      >
+                        <div className="relative size-10">
+                          {connectible.logoUri ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              alt={`${connectible.name} logo`}
+                              className="size-full rounded object-contain"
+                              src={connectible.logoUri}
+                            />
+                          ) : (
+                            <div className="flex size-full items-center justify-center rounded bg-muted font-medium text-muted-foreground text-lg">
+                              {connectible.name[0]}
+                            </div>
+                          )}
+                          {connectible.integration && (
+                            <div className="absolute -top-1 -left-1 rounded-full bg-green-500 p-0.5">
+                              <Plug className="size-2.5 text-white" />
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {connectible.integration && (
-                        <div className="absolute -top-1 -left-1 rounded-full bg-green-500 p-0.5">
-                          <Plug className="size-2.5 text-white" />
-                        </div>
-                      )}
-                    </div>
-                    <span className="w-full truncate text-center text-xs">
-                      {connectible.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                        <span className="w-full truncate text-center text-xs">
+                          {connectible.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {debouncedSearch.trim() && (
+                <button
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-purple-300 p-3 text-sm font-medium text-purple-600 transition-colors hover:border-purple-400 hover:bg-purple-50"
+                  onClick={handleBuildIntegration}
+                  type="button"
+                >
+                  <Sparkles className="size-4" />
+                  Build integration for &ldquo;{debouncedSearch.trim()}&rdquo;
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

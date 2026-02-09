@@ -11,3 +11,6 @@ export type MembraneService = {
 };
 
 export const membraneServicesAtom = atom<MembraneService[]>([]);
+
+/** Incremented when an agent session adds a new action, triggering action list refetch */
+export const actionsRefetchAtom = atom(0);

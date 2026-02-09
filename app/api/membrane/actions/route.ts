@@ -21,10 +21,11 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const externalAppId = searchParams.get("externalAppId");
+    const connectionId = searchParams.get("connectionId");
 
-    if (!externalAppId) {
+    if (!externalAppId && !connectionId) {
       return NextResponse.json(
-        { error: "externalAppId is required" },
+        { error: "externalAppId or connectionId is required" },
         { status: 400 }
       );
     }
@@ -34,10 +35,12 @@ export async function GET(request: Request) {
       session.user.name
     );
 
-    const params = new URLSearchParams({
-      externalAppId,
-      limit: "100",
-    });
+    const params = new URLSearchParams({ limit: "100" });
+    if (connectionId) {
+      params.set("connectionId", connectionId);
+    } else if (externalAppId) {
+      params.set("externalAppId", externalAppId);
+    }
 
     const response = await fetch(`${API_URI}/actions?${params.toString()}`, {
       headers: {

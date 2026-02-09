@@ -405,7 +405,8 @@ function MembraneActionConfig({
 
   const service = services.find((s) => s.id === serviceId);
   const { actions, isLoading: actionsLoading } = useMembraneActions(
-    service?.externalAppId
+    service?.externalAppId,
+    service?.connectionId
   );
 
   // Find the selected action's metadata

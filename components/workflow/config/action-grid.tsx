@@ -7,6 +7,7 @@ import {
   Grid3X3,
   List,
   MoreHorizontal,
+  Plus,
   Search,
   Settings,
   Zap,
@@ -27,6 +28,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AddActionOverlay } from "@/components/overlays/add-action-overlay";
 import { AddServiceOverlay } from "@/components/overlays/add-service-overlay";
 import { useOverlay } from "@/components/overlays/overlay-provider";
 import { useMembraneActions } from "@/hooks/use-membrane-actions";
@@ -165,19 +167,12 @@ function MembraneServiceActions({
   onSelectAction: (actionType: string) => void;
   disabled?: boolean;
 }) {
-  const { actions, isLoading } = useMembraneActions(service.externalAppId);
+  const { actions, isLoading } = useMembraneActions(service.externalAppId, service.connectionId);
+  const overlay = useOverlay();
 
   if (isLoading) {
     return (
       <p className="px-3 py-2 text-muted-foreground text-xs">Loading...</p>
-    );
-  }
-
-  if (actions.length === 0) {
-    return (
-      <p className="px-3 py-2 text-muted-foreground text-xs">
-        No actions available
-      </p>
     );
   }
 
@@ -201,6 +196,22 @@ function MembraneServiceActions({
           </span>
         </button>
       ))}
+      <button
+        className="flex w-full items-center gap-1.5 rounded-md px-3 py-2 text-left text-sm text-purple-600 transition-colors hover:bg-purple-50"
+        onClick={() =>
+          overlay.open(AddActionOverlay, {
+            serviceId: service.id,
+            serviceName: service.name,
+            externalAppId: service.externalAppId || "",
+            connectorId: service.connectorId || "",
+            connectionId: service.connectionId || "",
+          })
+        }
+        type="button"
+      >
+        <Plus className="size-3.5" />
+        <span className="font-medium">Add new action</span>
+      </button>
     </>
   );
 }

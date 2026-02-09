@@ -1,6 +1,7 @@
 "use client";
 
 import { IntegrationAppProvider } from "@membranehq/react";
+import { useAgentSession } from "@/hooks/use-agent-session";
 
 const API_URI =
   process.env.NEXT_PUBLIC_INTEGRATION_APP_API_URL ||
@@ -19,6 +20,12 @@ async function fetchToken() {
   return data.token;
 }
 
+/** Resumes agent session polling on mount if one is stored in localStorage. */
+function AgentSessionResumer() {
+  useAgentSession();
+  return null;
+}
+
 export function MembraneProvider({ children }: { children: React.ReactNode }) {
   return (
     <IntegrationAppProvider
@@ -26,6 +33,7 @@ export function MembraneProvider({ children }: { children: React.ReactNode }) {
       fetchToken={fetchToken}
       uiUri={UI_URI}
     >
+      <AgentSessionResumer />
       {children}
     </IntegrationAppProvider>
   );

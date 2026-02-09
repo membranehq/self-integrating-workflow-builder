@@ -1,6 +1,8 @@
 "use client";
 
+import { useAtomValue } from "jotai";
 import { useCallback, useEffect, useState } from "react";
+import { actionsRefetchAtom } from "@/lib/membrane-store";
 
 export interface MembraneAction {
   key: string;
@@ -23,14 +25,16 @@ interface UseMembraneActionsResult {
 }
 
 export function useMembraneActions(
-  externalAppId: string | undefined | null
+  externalAppId: string | undefined | null,
+  connectionId?: string | null
 ): UseMembraneActionsResult {
   const [actions, setActions] = useState<MembraneAction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const refetchCounter = useAtomValue(actionsRefetchAtom);
 
   const fetchActions = useCallback(async () => {
-    if (!externalAppId) {
+    if (!externalAppId && !connectionId) {
       setActions([]);
       return;
     }
@@ -39,7 +43,12 @@ export function useMembraneActions(
     setError(null);
 
     try {
-      const params = new URLSearchParams({ externalAppId });
+      const params = new URLSearchParams();
+      if (connectionId) {
+        params.set("connectionId", connectionId);
+      } else if (externalAppId) {
+        params.set("externalAppId", externalAppId);
+      }
       const response = await fetch(
         `/api/membrane/actions?${params.toString()}`
       );
@@ -58,11 +67,11 @@ export function useMembraneActions(
     } finally {
       setIsLoading(false);
     }
-  }, [externalAppId]);
+  }, [externalAppId, connectionId]);
 
   useEffect(() => {
     fetchActions();
-  }, [fetchActions]);
+  }, [fetchActions, refetchCounter]);
 
   return { actions, isLoading, error };
 }
