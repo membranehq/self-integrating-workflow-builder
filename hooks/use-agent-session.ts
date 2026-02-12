@@ -283,7 +283,7 @@ export function useAgentSession() {
         const response = await fetch("/api/membrane/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, agentName: "connection-building" }),
         });
 
         if (!response.ok) {
