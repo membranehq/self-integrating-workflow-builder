@@ -48,9 +48,6 @@ next-env.d.ts
 
 tmp/
 
-# reference projects (not part of build)
-.reference-projects/
-
 # generated files
 lib/types/integration.ts
 lib/codegen-registry.ts
