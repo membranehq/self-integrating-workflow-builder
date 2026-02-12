@@ -1,0 +1,1 @@
+ALTER TABLE "membrane_services" ADD COLUMN "connection_id" text;

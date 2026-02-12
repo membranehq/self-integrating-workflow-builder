@@ -26,10 +26,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api-client";
 import { integrationsAtom } from "@/lib/integrations-store";
+import { membraneServicesAtom } from "@/lib/membrane-store";
 import type { IntegrationType } from "@/lib/types/integration";
 import { generateWorkflowCode } from "@/lib/workflow-codegen";
 import {
   clearNodeStatusesAtom,
+  clearWorkflowAtom,
   currentWorkflowIdAtom,
   currentWorkflowNameAtom,
   deleteEdgeAtom,
@@ -44,11 +46,11 @@ import {
   propertiesPanelActiveTabAtom,
   selectedEdgeAtom,
   selectedNodeAtom,
-  showClearDialogAtom,
-  showDeleteDialogAtom,
   updateNodeDataAtom,
 } from "@/lib/workflow-store";
 import { findActionById } from "@/plugins";
+import { ConfirmOverlay } from "../overlays/confirm-overlay";
+import { useOverlay } from "../overlays/overlay-provider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { ActionConfig } from "./config/action-config";
 import { ActionGrid } from "./config/action-grid";
@@ -159,13 +161,14 @@ export const PanelInner = () => {
   const deleteNode = useSetAtom(deleteNodeAtom);
   const deleteEdge = useSetAtom(deleteEdgeAtom);
   const deleteSelectedItems = useSetAtom(deleteSelectedItemsAtom);
-  const setShowClearDialog = useSetAtom(showClearDialogAtom);
-  const setShowDeleteDialog = useSetAtom(showDeleteDialogAtom);
+  const clearWorkflow = useSetAtom(clearWorkflowAtom);
   const clearNodeStatuses = useSetAtom(clearNodeStatusesAtom);
+  const { open: openOverlay } = useOverlay();
   const setPendingIntegrationNodes = useSetAtom(pendingIntegrationNodesAtom);
   const [newlyCreatedNodeId, setNewlyCreatedNodeId] = useAtom(
     newlyCreatedNodeIdAtom
   );
+  const membraneServices = useAtomValue(membraneServicesAtom);
   const [showDeleteNodeAlert, setShowDeleteNodeAlert] = useState(false);
   const [showDeleteEdgeAlert, setShowDeleteEdgeAlert] = useState(false);
   const [showDeleteRunsAlert, setShowDeleteRunsAlert] = useState(false);
@@ -411,10 +414,49 @@ export const PanelInner = () => {
         newConfig = { ...newConfig, integrationId: undefined };
       }
 
+      // For Membrane actions, store service metadata in node config
+      // Format: membrane:{serviceId}:{actionKey}|{actionName}
+      if (key === "actionType" && value.startsWith("membrane:")) {
+        const rest = value.slice("membrane:".length);
+        const colonIdx = rest.indexOf(":");
+        const serviceId = colonIdx >= 0 ? rest.slice(0, colonIdx) : rest;
+        const afterServiceId = colonIdx >= 0 ? rest.slice(colonIdx + 1) : undefined;
+        // Parse actionKey and actionName separated by |
+        let actionKey: string | undefined;
+        let actionName: string | undefined;
+        if (afterServiceId) {
+          const pipeIdx = afterServiceId.indexOf("|");
+          if (pipeIdx >= 0) {
+            actionKey = afterServiceId.slice(0, pipeIdx);
+            actionName = afterServiceId.slice(pipeIdx + 1);
+          } else {
+            actionKey = afterServiceId;
+          }
+        }
+        const service = membraneServices.find((s) => s.id === serviceId);
+        if (service) {
+          newConfig = {
+            ...newConfig,
+            // Store the clean action type without the name suffix
+            actionType: actionKey
+              ? `membrane:${serviceId}:${actionKey}`
+              : `membrane:${serviceId}`,
+            membraneName: service.name,
+            membraneLogoUri: service.logoUri,
+            membraneConnectorId: service.connectorId,
+            membraneIntegrationKey: service.integrationKey,
+            membraneExternalAppId: service.externalAppId,
+            membraneActionKey: actionKey,
+            membraneActionName: actionName,
+          };
+        }
+      }
+
       updateNodeData({ id: selectedNode.id, data: { config: newConfig } });
 
       // When action type changes, auto-select integration if only one exists
-      if (key === "actionType") {
+      // Skip for Membrane actions (they handle connections separately)
+      if (key === "actionType" && !value.startsWith("membrane:")) {
         // Cancel any pending auto-select operation for this node
         const existingController =
           autoSelectAbortControllersRef.current[selectedNode.id];
@@ -621,7 +663,19 @@ export const PanelInner = () => {
                 <div className="flex items-center gap-2 pt-4">
                   <Button
                     className="text-muted-foreground"
-                    onClick={() => setShowClearDialog(true)}
+                    onClick={() => {
+                      openOverlay(ConfirmOverlay, {
+                        title: "Clear Workflow",
+                        message:
+                          "Are you sure you want to clear all nodes and connections? This action cannot be undone.",
+                        confirmLabel: "Clear Workflow",
+                        confirmVariant: "destructive" as const,
+                        destructive: true,
+                        onConfirm: () => {
+                          clearWorkflow();
+                        },
+                      });
+                    }}
                     size="sm"
                     variant="ghost"
                   >
@@ -630,7 +684,28 @@ export const PanelInner = () => {
                   </Button>
                   <Button
                     className="text-muted-foreground"
-                    onClick={() => setShowDeleteDialog(true)}
+                    onClick={() => {
+                      openOverlay(ConfirmOverlay, {
+                        title: "Delete Workflow",
+                        message: `Are you sure you want to delete "${currentWorkflowName}"? This will permanently delete the workflow. This cannot be undone.`,
+                        confirmLabel: "Delete Workflow",
+                        confirmVariant: "destructive" as const,
+                        destructive: true,
+                        onConfirm: async () => {
+                          if (!currentWorkflowId) return;
+                          try {
+                            await api.workflow.delete(currentWorkflowId);
+                            toast.success("Workflow deleted successfully");
+                            window.location.href = "/";
+                          } catch (error) {
+                            console.error("Failed to delete workflow:", error);
+                            toast.error(
+                              "Failed to delete workflow. Please try again."
+                            );
+                          }
+                        },
+                      });
+                    }}
                     size="sm"
                     variant="ghost"
                   >

@@ -7,6 +7,7 @@ import {
   Grid3X3,
   List,
   MoreHorizontal,
+  Plus,
   Search,
   Settings,
   Zap,
@@ -27,6 +28,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AddActionOverlay } from "@/components/overlays/add-action-overlay";
+import { AddServiceOverlay } from "@/components/overlays/add-service-overlay";
+import { useOverlay } from "@/components/overlays/overlay-provider";
+import { useMembraneActions } from "@/hooks/use-membrane-actions";
+import { useMembraneIntegrations } from "@/hooks/use-membrane-integrations";
+import type { MembraneService } from "@/lib/membrane-store";
 import { useIsTouch } from "@/hooks/use-touch";
 import { cn } from "@/lib/utils";
 import { getAllActions } from "@/plugins";
@@ -151,6 +158,64 @@ function getInitialViewMode(): ViewMode {
   }
 }
 
+function MembraneServiceActions({
+  service,
+  onSelectAction,
+  disabled,
+}: {
+  service: MembraneService;
+  onSelectAction: (actionType: string) => void;
+  disabled?: boolean;
+}) {
+  const { actions, isLoading } = useMembraneActions(service.externalAppId, service.connectionId);
+  const overlay = useOverlay();
+
+  if (isLoading) {
+    return (
+      <p className="px-3 py-2 text-muted-foreground text-xs">Loading...</p>
+    );
+  }
+
+  return (
+    <>
+      {actions.map((action) => (
+        <button
+          className={cn(
+            "flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+            disabled && "pointer-events-none opacity-50"
+          )}
+          disabled={disabled}
+          key={`${service.id}:${action.key}`}
+          onClick={() =>
+            onSelectAction(`membrane:${service.id}:${action.key}|${action.name}`)
+          }
+          type="button"
+        >
+          <span className="min-w-0 flex-1 truncate">
+            <span className="font-medium">{action.name}</span>
+          </span>
+        </button>
+      ))}
+      <button
+        className="flex w-full items-center gap-1.5 rounded-md px-3 py-2 text-left text-sm text-purple-600 transition-colors hover:bg-purple-50"
+        onClick={() =>
+          overlay.open(AddActionOverlay, {
+            serviceId: service.id,
+            serviceName: service.name,
+            externalAppId: service.externalAppId || "",
+            connectorId: service.connectorId || "",
+            connectionId: service.connectionId || "",
+          })
+        }
+        type="button"
+      >
+        <Plus className="size-3.5" />
+        <span className="font-medium">Add new action</span>
+      </button>
+    </>
+  );
+}
+
 export function ActionGrid({
   onSelectAction,
   disabled,
@@ -166,8 +231,10 @@ export function ActionGrid({
   const [showHidden, setShowHidden] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
   const actions = useAllActions();
+  const { services: membraneServices } = useMembraneIntegrations();
   const inputRef = useRef<HTMLInputElement>(null);
   const isTouch = useIsTouch();
+  const overlay = useOverlay();
 
   const toggleViewMode = () => {
     const newMode = viewMode === "list" ? "grid" : "list";
@@ -208,6 +275,15 @@ export function ActionGrid({
       inputRef.current.focus();
     }
   }, [isNewlyCreated, isTouch]);
+
+  // Filter Membrane services by search
+  const filteredMembraneServices = useMemo(() => {
+    if (!filter) return membraneServices;
+    const searchTerm = filter.toLowerCase();
+    return membraneServices.filter((s) =>
+      s.name.toLowerCase().includes(searchTerm)
+    );
+  }, [membraneServices, filter]);
 
   const filteredActions = actions.filter((action) => {
     const searchTerm = filter.toLowerCase();
@@ -315,53 +391,104 @@ export function ActionGrid({
         )}
       </div>
 
+      <button
+        className="flex shrink-0 items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors hover:bg-muted"
+        onClick={() => {
+          overlay.open(AddServiceOverlay);
+        }}
+        type="button"
+      >
+        <span>Add service +</span>
+        <span className="flex items-center gap-1 text-muted-foreground text-xs">
+          Powered by Membrane
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt="Membrane"
+            className="size-3.5 dark:invert"
+            src="/membrane-logo.png"
+          />
+        </span>
+      </button>
+
       <div
         className="min-h-0 flex-1 overflow-y-auto pb-4"
         data-testid="action-grid"
       >
-        {filteredActions.length === 0 && (
-          <p className="py-4 text-center text-muted-foreground text-sm">
-            No actions found
-          </p>
-        )}
-        {filteredActions.length > 0 && visibleGroups.length === 0 && (
-          <p className="py-4 text-center text-muted-foreground text-sm">
-            All groups are hidden
-          </p>
-        )}
+        {filteredActions.length === 0 &&
+          filteredMembraneServices.length === 0 && (
+            <p className="py-4 text-center text-muted-foreground text-sm">
+              No actions found
+            </p>
+          )}
+        {filteredActions.length > 0 &&
+          visibleGroups.length === 0 &&
+          filteredMembraneServices.length === 0 && (
+            <p className="py-4 text-center text-muted-foreground text-sm">
+              All groups are hidden
+            </p>
+          )}
 
         {/* Grid View */}
-        {viewMode === "grid" && visibleGroups.length > 0 && (
-          <div
-            className="grid gap-2 p-1"
-            style={{
-              gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))",
-            }}
-          >
-            {filteredActions
-              .filter(
-                (action) => showHidden || !hiddenGroups.has(action.category)
-              )
-              .map((action) => (
+        {viewMode === "grid" &&
+          (visibleGroups.length > 0 ||
+            filteredMembraneServices.length > 0) && (
+            <div
+              className="grid gap-2 p-1"
+              style={{
+                gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))",
+              }}
+            >
+              {filteredActions
+                .filter(
+                  (action) => showHidden || !hiddenGroups.has(action.category)
+                )
+                .map((action) => (
+                  <button
+                    className={cn(
+                      "flex aspect-square flex-col items-center justify-center gap-1.5 rounded-lg border border-transparent p-2 text-center transition-colors hover:border-border hover:bg-muted",
+                      disabled && "pointer-events-none opacity-50"
+                    )}
+                    data-testid={`action-option-${action.id.toLowerCase().replace(/\s+/g, "-")}`}
+                    disabled={disabled}
+                    key={action.id}
+                    onClick={() => onSelectAction(action.id)}
+                    type="button"
+                  >
+                    <ActionIcon action={action} className="size-6" />
+                    <span className="line-clamp-2 font-medium text-xs leading-tight">
+                      {action.label}
+                    </span>
+                  </button>
+                ))}
+              {filteredMembraneServices.map((service) => (
                 <button
                   className={cn(
                     "flex aspect-square flex-col items-center justify-center gap-1.5 rounded-lg border border-transparent p-2 text-center transition-colors hover:border-border hover:bg-muted",
                     disabled && "pointer-events-none opacity-50"
                   )}
-                  data-testid={`action-option-${action.id.toLowerCase().replace(/\s+/g, "-")}`}
                   disabled={disabled}
-                  key={action.id}
-                  onClick={() => onSelectAction(action.id)}
+                  key={`membrane:${service.id}`}
                   type="button"
                 >
-                  <ActionIcon action={action} className="size-6" />
+                  {service.logoUri ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      alt={service.name}
+                      className="size-6 rounded object-contain"
+                      src={service.logoUri}
+                    />
+                  ) : (
+                    <div className="flex size-6 items-center justify-center rounded bg-muted font-medium text-muted-foreground text-xs">
+                      {service.name[0]}
+                    </div>
+                  )}
                   <span className="line-clamp-2 font-medium text-xs leading-tight">
-                    {action.label}
+                    {service.name}
                   </span>
                 </button>
               ))}
-          </div>
-        )}
+            </div>
+          )}
 
         {/* List View */}
         {viewMode === "list" &&
@@ -444,6 +571,57 @@ export function ActionGrid({
                       </span>
                     </button>
                   ))}
+              </div>
+            );
+          })}
+
+        {/* Membrane Service Groups (rendered like plugin groups) */}
+        {viewMode === "list" &&
+          filteredMembraneServices.map((service, i) => {
+            const groupKey = `membrane:${service.id}`;
+            const isCollapsed = collapsedGroups.has(groupKey);
+            return (
+              <div key={groupKey}>
+                {(visibleGroups.length > 0 || i > 0) && (
+                  <div className="my-2 h-px bg-border" />
+                )}
+                <div className="sticky top-0 z-10 mb-1 flex items-center gap-2 bg-background px-3 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+                  <button
+                    className="flex flex-1 items-center gap-2 text-left hover:text-foreground"
+                    onClick={() => toggleGroup(groupKey)}
+                    type="button"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "size-3.5 transition-transform",
+                        !isCollapsed && "rotate-90"
+                      )}
+                    />
+                    {service.logoUri ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        alt={service.name}
+                        className="size-4 rounded object-contain"
+                        src={service.logoUri}
+                      />
+                    ) : (
+                      <div className="flex size-4 items-center justify-center rounded bg-muted font-medium text-muted-foreground text-[10px]">
+                        {service.name[0]}
+                      </div>
+                    )}
+                    {service.name}
+                    <span className="rounded bg-purple-100 px-1.5 py-0.5 font-medium text-purple-700 text-[10px] normal-case tracking-normal dark:bg-purple-900/30 dark:text-purple-300">
+                      Membrane
+                    </span>
+                  </button>
+                </div>
+                {!isCollapsed && (
+                  <MembraneServiceActions
+                    disabled={disabled}
+                    onSelectAction={onSelectAction}
+                    service={service}
+                  />
+                )}
               </div>
             );
           })}

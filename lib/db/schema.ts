@@ -163,6 +163,23 @@ export const apiKeys = pgTable("api_keys", {
   lastUsedAt: timestamp("last_used_at"),
 });
 
+// Membrane services added by user
+export const membraneServices = pgTable("membrane_services", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => generateId()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  name: text("name").notNull(),
+  logoUri: text("logo_uri"),
+  connectorId: text("connector_id"),
+  integrationKey: text("integration_key"),
+  externalAppId: text("external_app_id"),
+  connectionId: text("connection_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Relations
 export const workflowExecutionsRelations = relations(
   workflowExecutions,
@@ -186,3 +203,5 @@ export type WorkflowExecutionLog = typeof workflowExecutionLogs.$inferSelect;
 export type NewWorkflowExecutionLog = typeof workflowExecutionLogs.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
+export type MembraneServiceRow = typeof membraneServices.$inferSelect;
+export type NewMembraneService = typeof membraneServices.$inferInsert;

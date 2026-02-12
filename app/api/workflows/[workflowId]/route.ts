@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { validateWorkflowIntegrations } from "@/lib/db/integrations";
-import { workflows } from "@/lib/db/schema";
+import {
+  workflowExecutionLogs,
+  workflowExecutions,
+  workflows,
+} from "@/lib/db/schema";
 
 // Helper to strip sensitive data from nodes for public viewing
 function sanitizeNodesForPublicView(
@@ -237,6 +241,22 @@ export async function DELETE(
       );
     }
 
+    // Delete in order: logs → executions → workflow (foreign key constraints)
+    const executions = await db.query.workflowExecutions.findMany({
+      where: eq(workflowExecutions.workflowId, workflowId),
+      columns: { id: true },
+    });
+    if (executions.length > 0) {
+      const executionIds = executions.map((e) => e.id);
+      for (const executionId of executionIds) {
+        await db
+          .delete(workflowExecutionLogs)
+          .where(eq(workflowExecutionLogs.executionId, executionId));
+      }
+      await db
+        .delete(workflowExecutions)
+        .where(eq(workflowExecutions.workflowId, workflowId));
+    }
     await db.delete(workflows).where(eq(workflows.id, workflowId));
 
     return NextResponse.json({ success: true });

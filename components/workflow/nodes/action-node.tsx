@@ -79,7 +79,15 @@ const SYSTEM_ACTION_LABELS: Record<string, string> = {
 };
 
 // Helper to get integration name from action type
-const getIntegrationFromActionType = (actionType: string): string => {
+const getIntegrationFromActionType = (
+  actionType: string,
+  config?: Record<string, unknown>
+): string => {
+  // Check Membrane actions
+  if (actionType.startsWith("membrane:") && config?.membraneName) {
+    return config.membraneName as string;
+  }
+
   // Check if it's a system action first
   if (SYSTEM_ACTION_LABELS[actionType]) {
     return SYSTEM_ACTION_LABELS[actionType];
@@ -108,6 +116,9 @@ function isBase64ImageOutput(output: unknown): output is { base64: string } {
 
 // Helper to check if an action requires an integration
 const requiresIntegration = (actionType: string): boolean => {
+  // Membrane actions handle connections separately
+  if (actionType.startsWith("membrane:")) return false;
+
   // System actions that require integration configuration
   const systemActionsRequiringIntegration = ["Database Query"];
   if (systemActionsRequiringIntegration.includes(actionType)) {
@@ -120,7 +131,31 @@ const requiresIntegration = (actionType: string): boolean => {
 };
 
 // Helper to get provider logo for action type
-const getProviderLogo = (actionType: string) => {
+const getProviderLogo = (
+  actionType: string,
+  config?: Record<string, unknown>
+) => {
+  // Membrane actions - render logo from config
+  if (actionType.startsWith("membrane:") && config) {
+    const logoUri = config.membraneLogoUri as string | undefined;
+    const name = (config.membraneName as string) || "M";
+    if (logoUri) {
+      return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt={name}
+          className="size-12 rounded object-contain"
+          src={logoUri}
+        />
+      );
+    }
+    return (
+      <div className="flex size-12 items-center justify-center rounded bg-muted font-semibold text-muted-foreground text-xl">
+        {name[0]}
+      </div>
+    );
+  }
+
   // Check for system actions first (non-plugin)
   switch (actionType) {
     case "HTTP Request":
@@ -299,9 +334,17 @@ export const ActionNode = memo(({ data, selected, id }: ActionNodeProps) => {
 
   // Get human-readable label from registry if no custom label is set
   const actionInfo = findActionById(actionType);
-  const displayTitle = data.label || actionInfo?.label || actionType;
+  const membraneActionName = data.config?.membraneActionName as
+    | string
+    | undefined;
+  const displayTitle =
+    data.label ||
+    actionInfo?.label ||
+    membraneActionName ||
+    (data.config?.membraneName as string) ||
+    actionType;
   const displayDescription =
-    data.description || getIntegrationFromActionType(actionType);
+    data.description || getIntegrationFromActionType(actionType, data.config);
 
   const needsIntegration = requiresIntegration(actionType);
   // Don't show missing indicator if we're still checking for auto-select
@@ -370,11 +413,11 @@ export const ActionNode = memo(({ data, selected, id }: ActionNodeProps) => {
             base64={(nodeLog.output as { base64: string }).base64}
           />
         ) : (
-          getProviderLogo(actionType)
+          getProviderLogo(actionType, data.config)
         )}
         <div className="flex flex-col items-center gap-1 text-center">
           <NodeTitle className="text-base">{displayTitle}</NodeTitle>
-          {displayDescription && (
+          {displayDescription && displayDescription !== displayTitle && (
             <NodeDescription className="text-xs">
               {displayDescription}
             </NodeDescription>

@@ -5,6 +5,7 @@ import {
   accounts,
   apiKeys,
   integrations,
+  membraneServices,
   sessions,
   users,
   verifications,
@@ -26,6 +27,7 @@ const schema = {
   workflowExecutionsRelations,
   apiKeys,
   integrations,
+  membraneServices,
 };
 
 const connectionString =
