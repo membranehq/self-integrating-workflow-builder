@@ -24,18 +24,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { prompt } = await request.json();
+    const { prompt, agentName } = await request.json();
     if (!prompt) {
       return NextResponse.json(
         { error: "prompt is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const token = await generateMembraneToken(
       session.user.id,
-      session.user.name
+      session.user.name,
     );
+
+    const body: Record<string, string> = { prompt };
+    if (agentName) {
+      body.agentName = agentName;
+    }
 
     const response = await fetch(`${API_URI}/agent/sessions`, {
       method: "POST",
@@ -43,7 +48,7 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -51,11 +56,11 @@ export async function POST(request: Request) {
       console.error(
         "[Membrane Sessions] Failed to create session:",
         response.status,
-        text
+        text,
       );
       return NextResponse.json(
         { error: `Failed to create agent session: ${response.status}` },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -68,7 +73,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(
       { error: "Failed to create agent session" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -93,7 +98,7 @@ export async function GET(request: Request) {
     if (!sessionId) {
       return NextResponse.json(
         { error: "sessionId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -102,7 +107,7 @@ export async function GET(request: Request) {
 
     const token = await generateMembraneToken(
       session.user.id,
-      session.user.name
+      session.user.name,
     );
 
     const url = new URL(`${API_URI}/agent/sessions/${sessionId}`);
@@ -120,11 +125,11 @@ export async function GET(request: Request) {
       console.error(
         "[Membrane Sessions] Failed to poll session:",
         response.status,
-        text
+        text,
       );
       return NextResponse.json(
         { error: `Failed to poll session: ${response.status}` },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -142,7 +147,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json(
       { error: "Failed to poll session status" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
