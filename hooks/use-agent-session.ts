@@ -67,9 +67,7 @@ function addStoredSession(session: StoredSession) {
 }
 
 function removeStoredSession(sessionId: string) {
-  const sessions = getStoredSessions().filter(
-    (s) => s.sessionId !== sessionId
-  );
+  const sessions = getStoredSessions().filter((s) => s.sessionId !== sessionId);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
 }
 
@@ -87,7 +85,7 @@ async function refetchIntegrations(): Promise<MembraneService[]> {
 async function addBuiltService(appName: string): Promise<boolean> {
   try {
     const searchResponse = await fetch(
-      `/api/connectibles/search?q=${encodeURIComponent(appName)}`
+      `/api/connectibles/search?q=${encodeURIComponent(appName)}`,
     );
     if (!searchResponse.ok) {
       console.error("[addBuiltService] Search failed:", searchResponse.status);
@@ -99,8 +97,7 @@ async function addBuiltService(appName: string): Promise<boolean> {
 
     const match =
       connectibles.find(
-        (c: { name: string }) =>
-          c.name.toLowerCase() === appName.toLowerCase()
+        (c: { name: string }) => c.name.toLowerCase() === appName.toLowerCase(),
       ) || connectibles[0];
 
     const addResponse = await fetch("/api/membrane/integrations", {
@@ -142,7 +139,7 @@ function addActionPrompt(
   serviceName: string,
   connectorId: string,
   connectionId: string,
-  actionDescription: string
+  actionDescription: string,
 ): string {
   return `I need to create a new action for a tenant-level connector.
 
@@ -173,9 +170,20 @@ function getSuccessMessage(session: StoredSession): string {
   return `New action added to ${session.serviceName}!`;
 }
 
+function getFailureMessage(session: StoredSession, status: string): string {
+  const action =
+    session.type === "build-integration"
+      ? `building ${session.appName} integration`
+      : `adding action to ${session.serviceName}`;
+  if (status === "cancelled") {
+    return `Session ${status} while ${action}.`;
+  }
+  return `Failed ${action}. Please try again.`;
+}
+
 export function useAgentSession() {
   const [buildingSessionIds, setBuildingSessionIds] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const setMembraneServices = useSetAtom(membraneServicesAtom);
   const setActionsRefetch = useSetAtom(actionsRefetchAtom);
@@ -200,7 +208,7 @@ export function useAgentSession() {
           let data: SessionStatus;
           try {
             const response = await fetch(
-              `/api/membrane/sessions?sessionId=${session.sessionId}&wait=1&timeout=30`
+              `/api/membrane/sessions?sessionId=${session.sessionId}&wait=1&timeout=30`,
             );
             if (!response.ok) {
               console.error("[AgentSession] Poll failed:", response.status);
@@ -214,13 +222,16 @@ export function useAgentSession() {
             continue;
           }
 
-          // TODO: revert — temporarily treat failed as success
-          if (
-            data.state === "idle" ||
-            data.status === "completed" ||
-            data.status === "failed" ||
-            data.status === "cancelled"
-          ) {
+          if (data.status === "failed" || data.status === "cancelled") {
+            removeStoredSession(session.sessionId);
+            toast.error(getFailureMessage(session, data.status), {
+              id: tid,
+              closeButton: true,
+            });
+            break;
+          }
+
+          if (data.state === "idle" || data.status === "completed") {
             removeStoredSession(session.sessionId);
 
             if (session.type === "build-integration") {
@@ -247,7 +258,7 @@ export function useAgentSession() {
         });
       }
     },
-    [setMembraneServices, setActionsRefetch]
+    [setMembraneServices, setActionsRefetch],
   );
 
   const startBuildSession = useCallback(
@@ -260,10 +271,13 @@ export function useAgentSession() {
       };
 
       const tid = toastId({ ...session, sessionId: "pending-build" });
-      toast.loading(getLoadingMessage({ ...session, sessionId: "pending-build" }), {
-        id: tid,
-        duration: Number.POSITIVE_INFINITY,
-      });
+      toast.loading(
+        getLoadingMessage({ ...session, sessionId: "pending-build" }),
+        {
+          id: tid,
+          duration: Number.POSITIVE_INFINITY,
+        },
+      );
 
       try {
         const response = await fetch("/api/membrane/sessions", {
@@ -294,7 +308,7 @@ export function useAgentSession() {
         });
       }
     },
-    [pollSession]
+    [pollSession],
   );
 
   const startAddActionSession = useCallback(
@@ -303,13 +317,13 @@ export function useAgentSession() {
       externalAppId: string,
       connectorId: string,
       connectionId: string,
-      actionDescription: string
+      actionDescription: string,
     ) => {
       const prompt = addActionPrompt(
         serviceName,
         connectorId,
         connectionId,
-        actionDescription
+        actionDescription,
       );
       const session: AddActionSession = {
         type: "add-action",
@@ -323,7 +337,7 @@ export function useAgentSession() {
       const tid = toastId({ ...session, sessionId: "pending-action" });
       toast.loading(
         getLoadingMessage({ ...session, sessionId: "pending-action" }),
-        { id: tid, duration: Number.POSITIVE_INFINITY }
+        { id: tid, duration: Number.POSITIVE_INFINITY },
       );
 
       try {
@@ -354,7 +368,7 @@ export function useAgentSession() {
         });
       }
     },
-    [pollSession]
+    [pollSession],
   );
 
   // On mount, check for active sessions and resume polling
@@ -365,7 +379,7 @@ export function useAgentSession() {
     async function checkAndResume(session: StoredSession) {
       try {
         const response = await fetch(
-          `/api/membrane/sessions?sessionId=${session.sessionId}`
+          `/api/membrane/sessions?sessionId=${session.sessionId}`,
         );
         if (!response.ok) {
           removeStoredSession(session.sessionId);
@@ -386,6 +400,9 @@ export function useAgentSession() {
         }
         if (data.status === "failed" || data.status === "cancelled") {
           removeStoredSession(session.sessionId);
+          toast.error(getFailureMessage(session, data.status), {
+            closeButton: true,
+          });
           return;
         }
 
