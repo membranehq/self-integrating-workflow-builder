@@ -15,16 +15,16 @@
     "incremental": true,
     "plugins": [
       {
-        "name": "next"
+        "name": "next",
       },
       {
-        "name": "workflow"
-      }
+        "name": "workflow",
+      },
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
     },
-    "strictNullChecks": true
+    "strictNullChecks": true,
   },
   "include": [
     "next-env.d.ts",
@@ -32,12 +32,13 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
   ],
   "exclude": [
     "node_modules",
     "lib/next-boilerplate/**/*.ts",
     "lib/next-boilerplate/**/*.tsx",
-    "tmp/**/*"
-  ]
+    "tmp/**/*",
+    "plugins/_*/**/*",
+  ],
 }
