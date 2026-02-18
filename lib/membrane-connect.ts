@@ -6,9 +6,13 @@ import type { IntegrationAppClient } from "@membranehq/sdk";
  */
 export async function openMembraneConnection(
   integrationApp: IntegrationAppClient,
-  connectorId: string
+  connectorId: string,
+  options?: { theme?: string },
 ): Promise<{ connectionId: string } | null> {
-  const connection = await integrationApp.ui.connect({ connectorId });
+  const connection = await integrationApp.ui.connect({
+    connectorId,
+    ...(options?.theme && { theme: options.theme }),
+  });
 
   if (connection?.id) {
     return { connectionId: connection.id };
