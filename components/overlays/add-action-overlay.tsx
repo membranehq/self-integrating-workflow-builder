@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Check, Plus } from "lucide-react";
 import { useCallback, useState } from "react";
+import { useTheme } from "next-themes";
 import { useIntegrationApp } from "@membranehq/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,9 +34,11 @@ export function AddActionOverlay({
   const { startAddActionSession, isBuilding } = useAgentSession();
   const { refetch } = useMembraneIntegrations();
   const integrationApp = useIntegrationApp();
+  const { resolvedTheme } = useTheme();
   const [description, setDescription] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
-  const [activeConnectionId, setActiveConnectionId] = useState(initialConnectionId);
+  const [activeConnectionId, setActiveConnectionId] =
+    useState(initialConnectionId);
 
   const isConnected = !!activeConnectionId;
 
@@ -43,7 +46,9 @@ export function AddActionOverlay({
     if (!connectorId || !integrationApp) return;
     setIsConnecting(true);
     try {
-      const result = await openMembraneConnection(integrationApp, connectorId);
+      const result = await openMembraneConnection(integrationApp, connectorId, {
+        theme: resolvedTheme === "dark" ? "dark" : "light",
+      });
       if (result?.connectionId) {
         setActiveConnectionId(result.connectionId);
         // Persist to DB
@@ -70,7 +75,7 @@ export function AddActionOverlay({
       externalAppId,
       connectorId,
       activeConnectionId,
-      description.trim()
+      description.trim(),
     );
     closeAll();
   };

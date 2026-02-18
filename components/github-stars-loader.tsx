@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { GitHubStarsProvider } from "@/components/github-stars-provider";
 
-const GITHUB_REPO = "vercel-labs/workflow-builder-template";
+const GITHUB_REPO = "membranehq/self-integrating-workflow-builder";
 
 async function getGitHubStars(): Promise<number | null> {
   try {
@@ -15,7 +15,7 @@ async function getGitHubStars(): Promise<number | null> {
           }),
         },
         next: { revalidate: 3600 }, // Cache for 1 hour
-      }
+      },
     );
 
     if (!response.ok) {

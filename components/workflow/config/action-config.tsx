@@ -3,6 +3,7 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { AlertTriangle, Check, HelpCircle, Plus, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTheme } from "next-themes";
 import { ConfigureConnectionOverlay } from "@/components/overlays/add-connection-overlay";
 import { AiGatewayConsentOverlay } from "@/components/overlays/ai-gateway-consent-overlay";
 import { useOverlay } from "@/components/overlays/overlay-provider";
@@ -340,7 +341,9 @@ function normalizeActionType(actionType: string): string {
  * Convert a Membrane action's inputSchema into ActionConfigFieldBase[] for rendering.
  */
 function inputSchemaToFields(
-  inputSchema: NonNullable<import("@/hooks/use-membrane-actions").MembraneAction["inputSchema"]>
+  inputSchema: NonNullable<
+    import("@/hooks/use-membrane-actions").MembraneAction["inputSchema"]
+  >,
 ): ActionConfigFieldBase[] {
   const properties = inputSchema.properties || {};
   const required = new Set(inputSchema.required || []);
@@ -390,6 +393,7 @@ function MembraneActionConfig({
 }) {
   const { services, refetch } = useMembraneIntegrations();
   const integrationApp = useIntegrationApp();
+  const { resolvedTheme } = useTheme();
   const [isConnecting, setIsConnecting] = useState(false);
 
   // Parse service ID and action key from actionType
@@ -406,13 +410,13 @@ function MembraneActionConfig({
   const service = services.find((s) => s.id === serviceId);
   const { actions, isLoading: actionsLoading } = useMembraneActions(
     service?.externalAppId,
-    service?.connectionId
+    service?.connectionId,
   );
 
   // Find the selected action's metadata
   const selectedAction = useMemo(
     () => actions.find((a) => a.key === actionKey),
-    [actions, actionKey]
+    [actions, actionKey],
   );
 
   // Convert inputSchema to config fields
@@ -425,7 +429,11 @@ function MembraneActionConfig({
     if (!service?.connectorId || !integrationApp) return;
     setIsConnecting(true);
     try {
-      const result = await openMembraneConnection(integrationApp, service.connectorId);
+      const result = await openMembraneConnection(
+        integrationApp,
+        service.connectorId,
+        { theme: resolvedTheme === "dark" ? "dark" : "light" },
+      );
       if (result?.connectionId) {
         // Persist connectionId to database
         await fetch("/api/membrane/integrations", {
@@ -501,7 +509,12 @@ function MembraneActionConfig({
               <span className="text-sm">Connected to {serviceName}</span>
             </div>
             <Button
-              disabled={disabled || isConnecting || !service.connectorId || !integrationApp}
+              disabled={
+                disabled ||
+                isConnecting ||
+                !service.connectorId ||
+                !integrationApp
+              }
               onClick={handleConnect}
               size="sm"
               variant="outline"
@@ -512,7 +525,12 @@ function MembraneActionConfig({
         ) : (
           <Button
             className="w-full justify-start gap-2 border-orange-500/50 bg-orange-500/10 text-orange-600 hover:bg-orange-500/20"
-            disabled={disabled || isConnecting || !service.connectorId || !integrationApp}
+            disabled={
+              disabled ||
+              isConnecting ||
+              !service.connectorId ||
+              !integrationApp
+            }
             onClick={handleConnect}
             variant="outline"
           >

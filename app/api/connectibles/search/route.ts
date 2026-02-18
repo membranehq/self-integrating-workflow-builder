@@ -18,7 +18,7 @@ interface SearchResult {
 async function searchByType(
   token: string,
   elementType: string,
-  query: string
+  query: string,
 ): Promise<Record<string, unknown>[]> {
   try {
     const params = new URLSearchParams({ elementType, q: query });
@@ -36,13 +36,22 @@ async function searchByType(
   }
 }
 
+interface PaginatedResult {
+  items: Record<string, unknown>[];
+  cursor?: string;
+}
+
 async function listByEndpoint(
   token: string,
   endpoint: string,
-  limit: number = 50
-): Promise<Record<string, unknown>[]> {
+  limit: number,
+  cursor?: string,
+): Promise<PaginatedResult> {
   try {
     const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) {
+      params.set("cursor", cursor);
+    }
     const response = await fetch(
       `${API_URI}/${endpoint}?${params.toString()}`,
       {
@@ -50,14 +59,139 @@ async function listByEndpoint(
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
-    if (!response.ok) return [];
-    const data: { items?: Record<string, unknown>[] } = await response.json();
-    return data.items || [];
+    if (!response.ok) return { items: [] };
+    const data = await response.json();
+    return {
+      items: data.items || [],
+      cursor: data.cursor || undefined,
+    };
   } catch {
-    return [];
+    return { items: [] };
   }
+}
+
+function buildConnectibles(
+  integrationElements: Record<string, unknown>[],
+  appElements: Record<string, unknown>[],
+  connectorElements: Record<string, unknown>[],
+): Connectible[] {
+  const connectibles: Connectible[] = [];
+  const seenKeys = new Set<string>();
+
+  const appById = new Map<string, Record<string, unknown>>();
+  const connectorById = new Map<string, Record<string, unknown>>();
+
+  for (const el of appElements) {
+    if (el.uuid) appById.set(el.uuid as string, el);
+    if (el.id) appById.set(el.id as string, el);
+  }
+  for (const el of connectorElements) {
+    if (el.id) connectorById.set(el.id as string, el);
+  }
+
+  // 1. Integrations (highest priority — already set up)
+  for (const el of integrationElements) {
+    const key = `integration:${el.id}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+
+    const connectible: Connectible = {
+      name: (el.name as string) || (el.key as string),
+      logoUri: el.logoUri as string | undefined,
+      connectParameters: { integrationId: el.id as string },
+      integration: {
+        id: el.id as string,
+        key: el.key as string | undefined,
+        state: el.state as string | undefined,
+        connectorId: el.connectorId as string | undefined,
+      },
+    };
+
+    if (el.appUuid) {
+      const app = appById.get(el.appUuid as string);
+      connectible.externalApp = {
+        id: el.appUuid as string,
+        key: app?.key as string | undefined,
+        name: app?.name as string | undefined,
+      };
+    }
+
+    if (el.connectorId) {
+      const connector = connectorById.get(el.connectorId as string);
+      connectible.connector = {
+        id: el.connectorId as string,
+        name: connector?.name as string | undefined,
+      };
+    }
+
+    connectibles.push(connectible);
+  }
+
+  // 2. External apps (can be used to create integrations)
+  for (const el of appElements) {
+    const appObjectId = el.id as string;
+    const appUuid = el.uuid as string | undefined;
+    if (!el.defaultConnectorId) continue;
+
+    const hasIntegration = connectibles.some(
+      (c) =>
+        c.externalApp?.id === appObjectId ||
+        (appUuid && c.externalApp?.id === appUuid),
+    );
+    if (hasIntegration) continue;
+
+    const key = `app:${appObjectId}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+
+    const connector = connectorById.get(el.defaultConnectorId as string);
+
+    const connectible: Connectible = {
+      name: (el.name as string) || (el.key as string),
+      logoUri: el.logoUri as string | undefined,
+      connectParameters: { connectorId: el.defaultConnectorId as string },
+      externalApp: {
+        id: appObjectId,
+        key: el.key as string | undefined,
+        name: el.name as string | undefined,
+      },
+    };
+
+    if (connector) {
+      connectible.connector = {
+        id: el.defaultConnectorId as string,
+        name: connector.name as string | undefined,
+      };
+    }
+
+    connectibles.push(connectible);
+  }
+
+  // 3. Connectors (fallback)
+  for (const el of connectorElements) {
+    const connectorId = el.id as string;
+    const alreadyPresent = connectibles.some(
+      (c) =>
+        c.connector?.id === connectorId ||
+        c.connectParameters.connectorId === connectorId,
+    );
+    if (alreadyPresent) continue;
+
+    const key = `connector:${connectorId}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+
+    connectibles.push({
+      name: (el.name as string) || (el.key as string),
+      logoUri: el.logoUri as string | undefined,
+      connectParameters: { connectorId },
+      connector: { id: connectorId, name: el.name as string | undefined },
+    });
+  }
+
+  return connectibles;
 }
 
 export async function GET(request: Request) {
@@ -72,154 +206,79 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("q")?.trim() || undefined;
+    const cursor = searchParams.get("cursor") || undefined;
+    const limit = Math.min(Number(searchParams.get("limit")) || 50, 200);
 
     const token = await generateMembraneToken(
       session.user.id,
-      session.user.name
+      session.user.name,
     );
 
-    let integrationElements: Record<string, unknown>[] = [];
-    let appElements: Record<string, unknown>[] = [];
-    let connectorElements: Record<string, unknown>[] = [];
-
     if (query) {
-      [integrationElements, appElements, connectorElements] =
+      // Search mode: fetch all results at once (no pagination)
+      const [integrationElements, appElements, connectorElements] =
         await Promise.all([
           searchByType(token, "integration", query),
           searchByType(token, "app", query),
           searchByType(token, "connector", query),
         ]);
-    } else {
-      [integrationElements, appElements] = await Promise.all([
-        listByEndpoint(token, "integrations", 50),
-        listByEndpoint(token, "external-apps", 50),
-      ]);
-    }
 
-    const connectibles: Connectible[] = [];
-    const seenKeys = new Set<string>();
-
-    const appById = new Map<string, Record<string, unknown>>();
-    const connectorById = new Map<string, Record<string, unknown>>();
-
-    for (const el of appElements) {
-      // Index by both uuid and id so integrations can look up by appUuid
-      if (el.uuid) appById.set(el.uuid as string, el);
-      if (el.id) appById.set(el.id as string, el);
-    }
-    for (const el of connectorElements) {
-      if (el.id) connectorById.set(el.id as string, el);
-    }
-
-    // 1. Integrations (highest priority — already set up)
-    for (const el of integrationElements) {
-      const key = `integration:${el.id}`;
-      if (seenKeys.has(key)) continue;
-      seenKeys.add(key);
-
-      const connectible: Connectible = {
-        name: (el.name as string) || (el.key as string),
-        logoUri: el.logoUri as string | undefined,
-        connectParameters: { integrationId: el.id as string },
-        integration: {
-          id: el.id as string,
-          key: el.key as string | undefined,
-          state: el.state as string | undefined,
-          connectorId: el.connectorId as string | undefined,
-        },
-      };
-
-      if (el.appUuid) {
-        const app = appById.get(el.appUuid as string);
-        connectible.externalApp = {
-          id: el.appUuid as string,
-          key: app?.key as string | undefined,
-          name: app?.name as string | undefined,
-        };
-      }
-
-      if (el.connectorId) {
-        const connector = connectorById.get(el.connectorId as string);
-        connectible.connector = {
-          id: el.connectorId as string,
-          name: connector?.name as string | undefined,
-        };
-      }
-
-      connectibles.push(connectible);
-    }
-
-    // 2. External apps (can be used to create integrations)
-    for (const el of appElements) {
-      const appObjectId = el.id as string;
-      const appUuid = el.uuid as string | undefined;
-      if (!el.defaultConnectorId) continue;
-
-      // Check if already covered by an integration (integrations reference apps by uuid)
-      const hasIntegration = connectibles.some(
-        (c) =>
-          c.externalApp?.id === appObjectId ||
-          (appUuid && c.externalApp?.id === appUuid)
+      const connectibles = buildConnectibles(
+        integrationElements,
+        appElements,
+        connectorElements,
       );
-      if (hasIntegration) continue;
 
-      const key = `app:${appObjectId}`;
-      if (seenKeys.has(key)) continue;
-      seenKeys.add(key);
+      // Sort: integrations first, preserve API order within groups
+      connectibles.sort((a, b) => {
+        if (a.integration && !b.integration) return -1;
+        if (!a.integration && b.integration) return 1;
+        return 0;
+      });
 
-      const connector = connectorById.get(el.defaultConnectorId as string);
-
-      const connectible: Connectible = {
-        name: (el.name as string) || (el.key as string),
-        logoUri: el.logoUri as string | undefined,
-        connectParameters: { connectorId: el.defaultConnectorId as string },
-        externalApp: {
-          id: appObjectId,
-          key: el.key as string | undefined,
-          name: el.name as string | undefined,
-        },
-      };
-
-      if (connector) {
-        connectible.connector = {
-          id: el.defaultConnectorId as string,
-          name: connector.name as string | undefined,
-        };
-      }
-
-      connectibles.push(connectible);
+      return NextResponse.json({ connectibles });
     }
 
-    // 3. Connectors (fallback)
-    for (const el of connectorElements) {
-      const connectorId = el.id as string;
-      const alreadyPresent = connectibles.some(
-        (c) =>
-          c.connector?.id === connectorId ||
-          c.connectParameters.connectorId === connectorId
+    // Browse mode: paginate external-apps, fetch all integrations on first page
+    const isFirstPage = !cursor;
+
+    const appsResult = await listByEndpoint(
+      token,
+      "external-apps",
+      limit,
+      cursor,
+    );
+
+    let integrationElements: Record<string, unknown>[] = [];
+    if (isFirstPage) {
+      // Only fetch integrations on the first page — they go at the top
+      const integrationsResult = await listByEndpoint(
+        token,
+        "integrations",
+        200,
       );
-      if (alreadyPresent) continue;
+      integrationElements = integrationsResult.items;
+    }
 
-      const key = `connector:${connectorId}`;
-      if (seenKeys.has(key)) continue;
-      seenKeys.add(key);
+    const connectibles = buildConnectibles(
+      integrationElements,
+      appsResult.items,
+      [],
+    );
 
-      connectibles.push({
-        name: (el.name as string) || (el.key as string),
-        logoUri: el.logoUri as string | undefined,
-        connectParameters: { connectorId },
-        connector: { id: connectorId, name: el.name as string | undefined },
+    // On first page, sort integrations to the top
+    if (isFirstPage) {
+      connectibles.sort((a, b) => {
+        if (a.integration && !b.integration) return -1;
+        if (!a.integration && b.integration) return 1;
+        return 0;
       });
     }
 
-    // Sort: integrations first, then alphabetically
-    connectibles.sort((a, b) => {
-      if (a.integration && !b.integration) return -1;
-      if (!a.integration && b.integration) return 1;
-      return a.name.localeCompare(b.name);
+    return NextResponse.json({
+      connectibles,
+      cursor: appsResult.cursor,
     });
-
-    return NextResponse.json({ connectibles });
   } catch (error) {
     console.error("[Connectibles Search] Error:", error);
     if (error instanceof MembraneTokenError) {
@@ -227,7 +286,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json(
       { error: "Failed to search connectibles" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

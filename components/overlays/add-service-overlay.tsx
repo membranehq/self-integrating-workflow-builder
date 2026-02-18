@@ -1,7 +1,8 @@
 "use client";
 
 import { Plug, Search, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useConnectibles } from "@/hooks/use-connectibles";
@@ -22,11 +23,33 @@ export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
   const [search, setSearch] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const debouncedSearch = useDebounce(search, 300);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const { connectibles, isLoading, error } = useConnectibles({
-    search: debouncedSearch,
-    enabled: true,
-  });
+  const { connectibles, isLoading, isFetchingMore, hasMore, error, fetchMore } =
+    useConnectibles({
+      search: debouncedSearch,
+      enabled: true,
+    });
+
+  // Infinite scroll via IntersectionObserver
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const container = scrollContainerRef.current;
+    if (!sentinel || !container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isFetchingMore) {
+          fetchMore();
+        }
+      },
+      { root: container, rootMargin: "100px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isFetchingMore, fetchMore]);
 
   const handleBuildIntegration = () => {
     push(BuildIntegrationOverlay, { initialAppName: search.trim() });
@@ -50,14 +73,18 @@ export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
       });
 
       if (!response.ok) {
-        console.error("Failed to create integration");
+        toast.error("Failed to add service");
         return;
       }
 
       await refetch();
       closeAll();
+      toast.success(`${connectible.name} added`, {
+        description: "You can now select it from the services list.",
+      });
     } catch (err) {
       console.error("Failed to add service:", err);
+      toast.error("Failed to add service");
     } finally {
       setIsAdding(false);
     }
@@ -82,7 +109,7 @@ export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
           />
         </div>
 
-        <div className="max-h-[300px] overflow-y-auto">
+        <div className="max-h-[300px] overflow-y-auto" ref={scrollContainerRef}>
           {isAdding ? (
             <div className="flex items-center justify-center py-8">
               <Spinner />
@@ -110,11 +137,10 @@ export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
                 <div
                   className="grid gap-2"
                   style={{
-                    gridTemplateColumns:
-                      "repeat(auto-fill, minmax(80px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
                   }}
                 >
-                  {connectibles.map((connectible) => {
+                  {connectibles.map((connectible, index) => {
                     const id =
                       connectible.integration?.id ||
                       connectible.externalApp?.id ||
@@ -124,7 +150,7 @@ export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
                     return (
                       <button
                         className="relative flex flex-col items-center gap-2 rounded-lg p-3 transition-colors hover:bg-muted"
-                        key={id}
+                        key={`${id}-${index}`}
                         onClick={() => handleSelect(connectible)}
                         type="button"
                       >
@@ -153,6 +179,15 @@ export function AddServiceOverlay({ overlayId }: AddServiceOverlayProps) {
                       </button>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Sentinel for infinite scroll */}
+              <div ref={sentinelRef} />
+
+              {isFetchingMore && (
+                <div className="flex items-center justify-center py-4">
+                  <Spinner />
                 </div>
               )}
 
