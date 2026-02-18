@@ -6,7 +6,7 @@ import { formatAbbreviatedNumber } from "@/lib/utils/format-number";
 import { useGitHubStars } from "./github-stars-provider";
 
 const GITHUB_REPO_URL =
-  "https://github.com/vercel-labs/workflow-builder-template";
+  "https://github.com/membranehq/self-integrating-workflow-builder";
 
 export function GitHubStarsButton() {
   const stars = useGitHubStars();

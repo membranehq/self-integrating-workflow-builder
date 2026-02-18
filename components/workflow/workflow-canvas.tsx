@@ -87,7 +87,7 @@ export function WorkflowCanvas() {
   const rightPanelWidth = useAtomValue(rightPanelWidthAtom);
   const isPanelAnimating = useAtomValue(isPanelAnimatingAtom);
   const [isTransitioningFromHomepage, setIsTransitioningFromHomepage] = useAtom(
-    isTransitioningFromHomepageAtom
+    isTransitioningFromHomepageAtom,
   );
   const onNodesChange = useSetAtom(onNodesChangeAtom);
   const onEdgesChange = useSetAtom(onEdgesChangeAtom);
@@ -145,7 +145,7 @@ export function WorkflowCanvas() {
       const shiftPixels = (window.innerWidth * defaultSidebarPercent) / 2;
       setViewport(
         { ...viewport, x: viewport.x - shiftPixels },
-        { duration: 0 }
+        { duration: 0 },
       );
     }
   }, [isTransitioningFromHomepage, getViewport, setViewport]);
@@ -225,7 +225,7 @@ export function WorkflowCanvas() {
       action: ActionNode,
       add: AddNode,
     }),
-    []
+    [],
   );
 
   const nodeHasHandle = useCallback(
@@ -246,7 +246,7 @@ export function WorkflowCanvas() {
 
       return true;
     },
-    [nodes]
+    [nodes],
   );
 
   const isValidConnection = useCallback(
@@ -266,7 +266,7 @@ export function WorkflowCanvas() {
       // targetHandle should be defined if connecting to a specific handle
       return true;
     },
-    []
+    [],
   );
 
   const onConnect: OnConnect = useCallback(
@@ -281,14 +281,14 @@ export function WorkflowCanvas() {
       // Trigger immediate autosave when nodes are connected
       triggerAutosave({ immediate: true });
     },
-    [edges, setEdges, setHasUnsavedChanges, triggerAutosave]
+    [edges, setEdges, setHasUnsavedChanges, triggerAutosave],
   );
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_event, node) => {
       setSelectedNode(node.id);
     },
-    [setSelectedNode]
+    [setSelectedNode],
   );
 
   const onConnectStart = useCallback(
@@ -296,7 +296,7 @@ export function WorkflowCanvas() {
       connectingNodeId.current = params.nodeId;
       connectingHandleType.current = params.handleType;
     },
-    []
+    [],
   );
 
   const getClientPosition = useCallback((event: MouseEvent | TouchEvent) => {
@@ -326,7 +326,7 @@ export function WorkflowCanvas() {
 
       return { adjustedX, adjustedY };
     },
-    []
+    [],
   );
 
   const handleConnectionToExistingNode = useCallback(
@@ -352,7 +352,7 @@ export function WorkflowCanvas() {
         });
       }
     },
-    [nodeHasHandle, onConnect]
+    [nodeHasHandle, onConnect],
   );
 
   const handleConnectionToNewNode = useCallback(
@@ -365,7 +365,7 @@ export function WorkflowCanvas() {
       const { adjustedX, adjustedY } = calculateMenuPosition(
         event,
         clientX,
-        clientY
+        clientY,
       );
 
       // Get the action template
@@ -410,7 +410,7 @@ export function WorkflowCanvas() {
           currentNodes.map((n) => ({
             ...n,
             selected: n.id === newNode.id,
-          }))
+          })),
         );
       }, 50);
 
@@ -445,7 +445,7 @@ export function WorkflowCanvas() {
       setActiveTab,
       setHasUnsavedChanges,
       triggerAutosave,
-    ]
+    ],
   );
 
   const onConnectEnd = useCallback(
@@ -491,7 +491,7 @@ export function WorkflowCanvas() {
       getClientPosition,
       handleConnectionToExistingNode,
       handleConnectionToNewNode,
-    ]
+    ],
   );
 
   const onPaneClick = useCallback(() => {
@@ -517,7 +517,7 @@ export function WorkflowCanvas() {
         setSelectedNode(selectedNodes[0].id);
       }
     },
-    [setSelectedNode]
+    [setSelectedNode],
   );
 
   return (
@@ -573,8 +573,8 @@ export function WorkflowCanvas() {
         )}
       </Canvas>
 
-      {/* AI Prompt */}
-      {currentWorkflowId && <AIPrompt workflowId={currentWorkflowId} />}
+      {/* AI Prompt — hidden until ready for users */}
+      {/* {currentWorkflowId && <AIPrompt workflowId={currentWorkflowId} />} */}
 
       {/* Context Menu */}
       <WorkflowContextMenu
