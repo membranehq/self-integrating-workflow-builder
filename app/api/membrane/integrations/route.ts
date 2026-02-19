@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -17,7 +17,8 @@ export async function GET(request: Request) {
     const services = await db
       .select()
       .from(membraneServices)
-      .where(eq(membraneServices.userId, session.user.id));
+      .where(eq(membraneServices.userId, session.user.id))
+      .orderBy(desc(membraneServices.createdAt));
 
     return NextResponse.json({
       services: services.map((s) => ({
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
     console.error("[Membrane Services] GET error:", error);
     return NextResponse.json(
       { error: "Failed to fetch services" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -53,10 +54,7 @@ export async function POST(request: Request) {
     const { name, logoUri, connectorId, integrationKey, externalAppId } = body;
 
     if (!name) {
-      return NextResponse.json(
-        { error: "name is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
 
     const [created] = await db
@@ -86,7 +84,7 @@ export async function POST(request: Request) {
     console.error("[Membrane Services] POST error:", error);
     return NextResponse.json(
       { error: "Failed to create service" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -105,10 +103,7 @@ export async function PATCH(request: Request) {
     const { id, connectionId } = body;
 
     if (!id) {
-      return NextResponse.json(
-        { error: "id is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
     const [updated] = await db
@@ -117,16 +112,13 @@ export async function PATCH(request: Request) {
       .where(
         and(
           eq(membraneServices.id, id),
-          eq(membraneServices.userId, session.user.id)
-        )
+          eq(membraneServices.userId, session.user.id),
+        ),
       )
       .returning();
 
     if (!updated) {
-      return NextResponse.json(
-        { error: "Service not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Service not found" }, { status: 404 });
     }
 
     return NextResponse.json({
@@ -144,7 +136,7 @@ export async function PATCH(request: Request) {
     console.error("[Membrane Services] PATCH error:", error);
     return NextResponse.json(
       { error: "Failed to update service" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

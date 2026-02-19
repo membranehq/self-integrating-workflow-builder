@@ -134,12 +134,36 @@ export async function GET(request: Request) {
     }
 
     const data = await response.json();
-    return NextResponse.json({
+
+    const result: Record<string, unknown> = {
       status: data.status,
       state: data.state,
       error: data.error,
       summary: data.summary,
-    });
+    };
+
+    // Optionally fetch session messages (used after build completes)
+    const includeMessages = searchParams.get("includeMessages");
+    if (includeMessages) {
+      try {
+        const messagesResponse = await fetch(
+          `${API_URI}/agent/sessions/${sessionId}/messages`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        if (messagesResponse.ok) {
+          const messagesData = await messagesResponse.json();
+          result.messages = messagesData;
+        }
+      } catch {
+        // Non-critical — messages are best-effort
+      }
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("[Membrane Sessions] GET error:", error);
     if (error instanceof MembraneTokenError) {

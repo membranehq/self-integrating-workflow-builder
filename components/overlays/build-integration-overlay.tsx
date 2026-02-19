@@ -10,16 +10,18 @@ import { useOverlay } from "./overlay-provider";
 type BuildIntegrationOverlayProps = {
   overlayId: string;
   initialAppName: string;
+  initialAppUrl?: string;
 };
 
 export function BuildIntegrationOverlay({
   overlayId,
   initialAppName,
+  initialAppUrl,
 }: BuildIntegrationOverlayProps) {
   const { closeAll } = useOverlay();
   const { startBuildSession, isBuilding } = useAgentSession();
   const [appName, setAppName] = useState(initialAppName);
-  const [appUrl, setAppUrl] = useState("");
+  const [appUrl, setAppUrl] = useState(initialAppUrl || "");
 
   const handleGenerate = () => {
     startBuildSession(appName.trim(), appUrl.trim());

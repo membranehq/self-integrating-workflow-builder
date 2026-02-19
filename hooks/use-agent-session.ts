@@ -79,18 +79,52 @@ async function refetchIntegrations(): Promise<MembraneService[]> {
 }
 
 /**
- * After the agent builds an external app + connector on Membrane,
- * search for it and add it to our local DB so it appears in the services list.
+ * Extract connector details from the agent's last message and add to local DB.
+ * Falls back to search-by-name if message parsing fails.
  */
-async function addBuiltService(appName: string): Promise<boolean> {
+async function addBuiltService(
+  sessionId: string,
+  appName: string,
+): Promise<boolean> {
+  // Try extracting from session messages first
+  try {
+    const response = await fetch(
+      `/api/membrane/sessions?sessionId=${sessionId}&includeMessages=1`,
+    );
+    if (response.ok) {
+      const data = await response.json();
+      const messages = data.messages;
+      if (Array.isArray(messages) && messages.length > 0) {
+        const lastMessage = messages[messages.length - 1];
+        const textPart = lastMessage?.parts?.find(
+          (p: { type: string }) => p.type === "text",
+        );
+        if (textPart?.text) {
+          const details = extractConnectorDetails(textPart.text);
+          if (details) {
+            const addResponse = await fetch("/api/membrane/integrations", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: details.appName || details.connectorName || appName,
+                connectorId: details.connectorId,
+              }),
+            });
+            if (addResponse.ok) return true;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[addBuiltService] Message extraction failed:", err);
+  }
+
+  // Fallback: search by name
   try {
     const searchResponse = await fetch(
       `/api/connectibles/search?q=${encodeURIComponent(appName)}`,
     );
-    if (!searchResponse.ok) {
-      console.error("[addBuiltService] Search failed:", searchResponse.status);
-      return false;
-    }
+    if (!searchResponse.ok) return false;
 
     const { connectibles } = await searchResponse.json();
     if (!connectibles || connectibles.length === 0) return false;
@@ -115,9 +149,35 @@ async function addBuiltService(appName: string): Promise<boolean> {
 
     return addResponse.ok;
   } catch (err) {
-    console.error("[addBuiltService] Error:", err);
+    console.error("[addBuiltService] Fallback search failed:", err);
     return false;
   }
+}
+
+function extractConnectorDetails(text: string): {
+  connectorId?: string;
+  connectorName?: string;
+  appName?: string;
+} | null {
+  // Extract connector ID from membrane://connector/{id} link
+  const connectorIdMatch = text.match(/membrane:\/\/connector\/([a-f0-9]+)/);
+  if (!connectorIdMatch) return null;
+
+  const connectorId = connectorIdMatch[1];
+
+  // Extract app name
+  const appNameMatch = text.match(/\*\*App Name\*\*:\s*(.+)/);
+  const appName = appNameMatch?.[1]?.trim();
+
+  // Extract connector name (may be in a markdown link)
+  const connectorNameMatch = text.match(
+    /\*\*Connector Name\*\*:\s*(?:\[([^\]]+)\]|(.+))/,
+  );
+  const connectorName = (
+    connectorNameMatch?.[1] || connectorNameMatch?.[2]
+  )?.trim();
+
+  return { connectorId, connectorName, appName };
 }
 
 function buildIntegrationPrompt(appName: string, appUrl: string): string {
@@ -226,7 +286,7 @@ export function useAgentSession() {
             removeStoredSession(session.sessionId);
 
             if (session.type === "build-integration") {
-              await addBuiltService(session.appName);
+              await addBuiltService(session.sessionId, session.appName);
               const services = await refetchIntegrations();
               setMembraneServices(services);
             } else {
@@ -381,7 +441,7 @@ export function useAgentSession() {
         if (data.status === "completed" || data.state === "idle") {
           removeStoredSession(session.sessionId);
           if (session.type === "build-integration") {
-            await addBuiltService(session.appName);
+            await addBuiltService(session.sessionId, session.appName);
             const services = await refetchIntegrations();
             setMembraneServices(services);
           } else {
