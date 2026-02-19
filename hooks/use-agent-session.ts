@@ -199,12 +199,7 @@ Connector Name: ${serviceName}
 Connection ID: ${connectionId || "Not available"}
 
 User's description of what the action should do:
-${actionDescription.trim()}
-
-Please help me create this action.
-
-IMPORTANT: This is a tenant-level connector, not a workspace-level integration. Create a connection-specific action using the provided Connection ID. Do not create an integration-level action.
-IMPORTANT: Do not ask the user any questions. Figure out the API details on your own.`;
+${actionDescription.trim()}`;
 }
 
 function getLoadingMessage(session: StoredSession): string {
@@ -395,7 +390,7 @@ export function useAgentSession() {
         const response = await fetch("/api/membrane/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, agentName: "action-building" }),
         });
 
         if (!response.ok) {
