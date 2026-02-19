@@ -87,21 +87,10 @@ export const UserMenu = () => {
     session.user.name === "Anonymous" ||
     session.user.email?.startsWith("temp-");
 
-  // Show Sign In button if user is anonymous or not logged in
+  // Show placeholder if user is anonymous or not logged in
+  // Sign In button hidden for now (functionality preserved in AuthDialog)
   if (isAnonymous) {
-    return (
-      <div className="flex items-center gap-2">
-        <AuthDialog>
-          <Button
-            className="h-9 disabled:opacity-100 disabled:[&>*]:text-muted-foreground"
-            size="sm"
-            variant="default"
-          >
-            Sign In
-          </Button>
-        </AuthDialog>
-      </div>
-    );
+    return <div className="h-9 w-9" />;
   }
 
   return (

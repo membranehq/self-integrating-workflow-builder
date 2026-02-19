@@ -4,10 +4,8 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Provider } from "jotai";
-import { type ReactNode, Suspense } from "react";
+import type { ReactNode } from "react";
 import { AuthProvider } from "@/components/auth/provider";
-import { GitHubStarsLoader } from "@/components/github-stars-loader";
-import { GitHubStarsProvider } from "@/components/github-stars-provider";
 import { GlobalModals } from "@/components/global-modals";
 import { OverlayProvider } from "@/components/overlays/overlay-provider";
 import { MembraneProvider } from "@/components/providers/membrane-provider";
@@ -35,7 +33,6 @@ type RootLayoutProps = {
   children: ReactNode;
 };
 
-// Inner content wrapped by GitHubStarsProvider (used for both loading and loaded states)
 function LayoutContent({ children }: { children: ReactNode }) {
   return (
     <ReactFlowProvider>
@@ -57,21 +54,11 @@ const RootLayout = ({ children }: RootLayoutProps) => (
         <Provider>
           <AuthProvider>
             <MembraneProvider>
-            <OverlayProvider>
-              <Suspense
-                fallback={
-                  <GitHubStarsProvider stars={null}>
-                    <LayoutContent>{children}</LayoutContent>
-                  </GitHubStarsProvider>
-                }
-              >
-                <GitHubStarsLoader>
-                  <LayoutContent>{children}</LayoutContent>
-                </GitHubStarsLoader>
-              </Suspense>
-              <Toaster />
-              <GlobalModals />
-            </OverlayProvider>
+              <OverlayProvider>
+                <LayoutContent>{children}</LayoutContent>
+                <Toaster />
+                <GlobalModals />
+              </OverlayProvider>
             </MembraneProvider>
           </AuthProvider>
         </Provider>
