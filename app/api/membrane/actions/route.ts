@@ -68,6 +68,7 @@ export async function GET(request: Request) {
         name: (item.name as string) || (item.id as string) || "",
         description: (item.description as string) || undefined,
         inputSchema: (item.inputSchema as Record<string, unknown>) || undefined,
+        isPublic: !!(item.isPublic),
       }));
 
     return NextResponse.json({ actions });

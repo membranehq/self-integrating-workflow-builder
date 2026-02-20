@@ -8,6 +8,7 @@ export interface MembraneAction {
   key: string;
   name: string;
   description?: string;
+  isPublic?: boolean;
   inputSchema?: {
     type?: string;
     properties?: Record<string, {
@@ -44,10 +45,10 @@ export function useMembraneActions(
 
     try {
       const params = new URLSearchParams();
-      if (connectionId) {
-        params.set("connectionId", connectionId);
-      } else if (externalAppId) {
+      if (externalAppId) {
         params.set("externalAppId", externalAppId);
+      } else if (connectionId) {
+        params.set("connectionId", connectionId);
       }
       const response = await fetch(
         `/api/membrane/actions?${params.toString()}`

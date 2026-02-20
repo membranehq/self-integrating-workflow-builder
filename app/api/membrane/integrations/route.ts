@@ -100,15 +100,27 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { id, connectionId } = body;
+    const { id, connectionId, connectorId, externalAppId, logoUri, integrationKey } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
+    // Build dynamic update object — only include fields that were provided
+    const updates: Record<string, string | null> = {};
+    if (connectionId !== undefined) updates.connectionId = connectionId || null;
+    if (connectorId !== undefined) updates.connectorId = connectorId || null;
+    if (externalAppId !== undefined) updates.externalAppId = externalAppId || null;
+    if (logoUri !== undefined) updates.logoUri = logoUri || null;
+    if (integrationKey !== undefined) updates.integrationKey = integrationKey || null;
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+    }
+
     const [updated] = await db
       .update(membraneServices)
-      .set({ connectionId: connectionId || null })
+      .set(updates)
       .where(
         and(
           eq(membraneServices.id, id),

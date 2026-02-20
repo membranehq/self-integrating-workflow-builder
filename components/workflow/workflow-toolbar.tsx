@@ -1456,6 +1456,21 @@ export const WorkflowToolbar = ({ workflowId }: WorkflowToolbarProps) => {
               Read-only
             </span>
           )}
+          <a
+            className="flex items-center gap-1 text-muted-foreground text-xs transition-colors hover:text-foreground"
+            href="https://getmembrane.com/"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Powered by
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt="Membrane"
+              className="size-3.5 dark:invert"
+              src="/membrane-logo.png"
+            />
+            Membrane
+          </a>
         </div>
       </Panel>
 

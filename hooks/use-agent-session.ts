@@ -15,6 +15,7 @@ type BuildIntegrationSession = {
   type: "build-integration";
   sessionId: string;
   appName: string;
+  placeholderServiceId?: string;
 };
 
 type AddActionSession = {
@@ -85,7 +86,26 @@ async function refetchIntegrations(): Promise<MembraneService[]> {
 async function addBuiltService(
   sessionId: string,
   appName: string,
+  existingServiceId?: string,
 ): Promise<boolean> {
+  // Helper: either PATCH existing placeholder or POST new service
+  async function saveService(data: Record<string, string | undefined>): Promise<boolean> {
+    if (existingServiceId) {
+      const response = await fetch("/api/membrane/integrations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: existingServiceId, ...data }),
+      });
+      return response.ok;
+    }
+    const response = await fetch("/api/membrane/integrations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return response.ok;
+  }
+
   // Try extracting from session messages first
   try {
     const response = await fetch(
@@ -102,15 +122,11 @@ async function addBuiltService(
         if (textPart?.text) {
           const details = extractConnectorDetails(textPart.text);
           if (details) {
-            const addResponse = await fetch("/api/membrane/integrations", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: details.appName || details.connectorName || appName,
-                connectorId: details.connectorId,
-              }),
+            const ok = await saveService({
+              name: details.appName || details.connectorName || appName,
+              connectorId: details.connectorId,
             });
-            if (addResponse.ok) return true;
+            if (ok) return true;
           }
         }
       }
@@ -134,20 +150,16 @@ async function addBuiltService(
         (c: { name: string }) => c.name.toLowerCase() === appName.toLowerCase(),
       ) || connectibles[0];
 
-    const addResponse = await fetch("/api/membrane/integrations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: match.name,
-        logoUri: match.logoUri,
-        connectorId:
-          match.connectParameters?.connectorId || match.connector?.id,
-        integrationKey: match.integration?.key,
-        externalAppId: match.externalApp?.id,
-      }),
+    const ok = await saveService({
+      name: match.name,
+      logoUri: match.logoUri,
+      connectorId:
+        match.connectParameters?.connectorId || match.connector?.id,
+      integrationKey: match.integration?.key,
+      externalAppId: match.externalApp?.id,
     });
 
-    return addResponse.ok;
+    return ok;
   } catch (err) {
     console.error("[addBuiltService] Fallback search failed:", err);
     return false;
@@ -281,7 +293,7 @@ export function useAgentSession() {
             removeStoredSession(session.sessionId);
 
             if (session.type === "build-integration") {
-              await addBuiltService(session.sessionId, session.appName);
+              await addBuiltService(session.sessionId, session.appName, session.placeholderServiceId);
               const services = await refetchIntegrations();
               setMembraneServices(services);
             } else {
@@ -308,12 +320,13 @@ export function useAgentSession() {
   );
 
   const startBuildSession = useCallback(
-    async (appName: string, appUrl: string) => {
+    async (appName: string, appUrl: string, placeholderServiceId?: string) => {
       const prompt = buildIntegrationPrompt(appName, appUrl);
       const session: BuildIntegrationSession = {
         type: "build-integration",
         sessionId: "", // filled after POST
         appName,
+        placeholderServiceId,
       };
 
       const tid = toastId({ ...session, sessionId: "pending-build" });
@@ -436,7 +449,7 @@ export function useAgentSession() {
         if (data.status === "completed" || data.state === "idle") {
           removeStoredSession(session.sessionId);
           if (session.type === "build-integration") {
-            await addBuiltService(session.sessionId, session.appName);
+            await addBuiltService(session.sessionId, session.appName, session.placeholderServiceId);
             const services = await refetchIntegrations();
             setMembraneServices(services);
           } else {

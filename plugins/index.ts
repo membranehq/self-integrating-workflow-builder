@@ -14,9 +14,7 @@
  * 2. Run: pnpm discover-plugins (or it runs automatically on build)
  */
 
-import "./ai-gateway";
-import "./blob";
-import "./v0";
+// No plugins discovered
 
 export type {
   ActionConfigField,

@@ -4,15 +4,20 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  Globe,
   Grid3X3,
   List,
   MoreHorizontal,
+  Plug,
   Plus,
   Search,
   Settings,
+  Sparkles,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSetAtom } from "jotai";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { IntegrationIcon } from "@/components/ui/integration-icon";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Tooltip,
   TooltipContent,
@@ -29,11 +35,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { AddActionOverlay } from "@/components/overlays/add-action-overlay";
-import { AddServiceOverlay } from "@/components/overlays/add-service-overlay";
+import { BuildIntegrationOverlay } from "@/components/overlays/build-integration-overlay";
 import { useOverlay } from "@/components/overlays/overlay-provider";
+import { useIntegrationApp } from "@membranehq/react";
+import { useTheme } from "next-themes";
+import { useConnectibles } from "@/hooks/use-connectibles";
+import { useDebounce } from "@/hooks/use-debounce";
 import { useMembraneActions } from "@/hooks/use-membrane-actions";
 import { useMembraneIntegrations } from "@/hooks/use-membrane-integrations";
-import type { MembraneService } from "@/lib/membrane-store";
+import { useWebSearch } from "@/hooks/use-web-search";
+import { openMembraneConnection } from "@/lib/membrane-connect";
+import { membraneServicesAtom, type MembraneService } from "@/lib/membrane-store";
+import type { Connectible } from "@/lib/types/connectible";
+import type { WebSearchApp } from "@/lib/types/web-search-app";
 import { useIsTouch } from "@/hooks/use-touch";
 import { cn } from "@/lib/utils";
 import { getAllActions } from "@/plugins";
@@ -46,27 +60,8 @@ type ActionType = {
   integration?: string;
 };
 
-// System actions that don't have plugins
-const SYSTEM_ACTIONS: ActionType[] = [
-  {
-    id: "HTTP Request",
-    label: "HTTP Request",
-    description: "Make an HTTP request to any API",
-    category: "System",
-  },
-  {
-    id: "Database Query",
-    label: "Database Query",
-    description: "Query your database",
-    category: "System",
-  },
-  {
-    id: "Condition",
-    label: "Condition",
-    description: "Branch based on a condition",
-    category: "System",
-  },
-];
+// System actions that don't have plugins (currently disabled)
+const SYSTEM_ACTIONS: ActionType[] = [];
 
 // Combine System actions with plugin actions
 function useAllActions(): ActionType[] {
@@ -172,19 +167,95 @@ function MembraneServiceActions({
     service.connectionId,
   );
   const overlay = useOverlay();
+  const integrationApp = useIntegrationApp();
+  const { theme } = useTheme();
+  const setMembraneServices = useSetAtom(membraneServicesAtom);
+  const [isConnecting, setIsConnecting] = useState(false);
 
+  const handleAddConnection = async () => {
+    if (!service.connectorId || !integrationApp) return;
+    setIsConnecting(true);
+    try {
+      const membraneTheme = theme === "light" || theme === "dark" ? theme : "auto";
+      const result = await openMembraneConnection(
+        integrationApp,
+        service.connectorId,
+        { theme: membraneTheme },
+      );
+      if (result?.connectionId) {
+        await fetch("/api/membrane/integrations", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: service.id,
+            connectionId: result.connectionId,
+          }),
+        });
+        setMembraneServices((prev) =>
+          prev.map((s) =>
+            s.id === service.id
+              ? { ...s, connectionId: result.connectionId }
+              : s,
+          ),
+        );
+        toast.success(`Connected to ${service.name}`);
+      }
+    } catch (err) {
+      console.error("Failed to connect:", err);
+      toast.error("Failed to connect");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  // State 1: No connector yet — agent still building
+  if (!service.connectionId && !service.connectorId) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 text-muted-foreground text-xs">
+        <Spinner className="size-3" />
+        Building integration...
+      </div>
+    );
+  }
+
+  // State 2: Has connector but no connection — show "Add connection"
+  if (!service.connectionId) {
+    return (
+      <button
+        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium text-orange-600 transition-colors hover:bg-orange-50 dark:text-orange-400 dark:hover:bg-orange-950/20"
+        disabled={isConnecting}
+        onClick={handleAddConnection}
+        type="button"
+      >
+        {isConnecting ? (
+          <Spinner className="size-3.5" />
+        ) : (
+          <Plug className="size-3.5" />
+        )}
+        {isConnecting ? "Connecting..." : "Add connection"}
+      </button>
+    );
+  }
+
+  // State 3: Connected — show actions + "Add new action"
   if (isLoading) {
     return (
       <p className="px-3 py-2 text-muted-foreground text-xs">Loading...</p>
     );
   }
 
+  // Sort: custom (non-public) first, then pre-built (public)
+  const sortedActions = [...actions].sort((a, b) => {
+    if (a.isPublic === b.isPublic) return 0;
+    return a.isPublic ? 1 : -1;
+  });
+
   return (
     <>
-      {actions.map((action) => (
+      {sortedActions.map((action) => (
         <button
           className={cn(
-            "flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
             disabled && "pointer-events-none opacity-50",
           )}
           disabled={disabled}
@@ -196,28 +267,334 @@ function MembraneServiceActions({
           }
           type="button"
         >
+          {action.isPublic ? (
+            <Zap className="size-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <Sparkles className="size-3.5 shrink-0 text-purple-500" />
+          )}
           <span className="min-w-0 flex-1 truncate">
             <span className="font-medium">{action.name}</span>
           </span>
         </button>
       ))}
-      <button
-        className="flex w-full items-center gap-1.5 rounded-md px-3 py-2 text-left text-sm text-purple-600 transition-colors hover:bg-purple-50"
-        onClick={() =>
-          overlay.open(AddActionOverlay, {
-            serviceId: service.id,
-            serviceName: service.name,
-            externalAppId: service.externalAppId || "",
-            connectorId: service.connectorId || "",
-            connectionId: service.connectionId || "",
-          })
-        }
-        type="button"
-      >
-        <Plus className="size-3.5" />
-        <span className="font-medium">Add new action</span>
-      </button>
     </>
+  );
+}
+
+function AddActionButton({ service }: { service: MembraneService }) {
+  const overlay = useOverlay();
+  return (
+    <button
+      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-purple-600 text-xs font-medium normal-case tracking-normal hover:bg-purple-50 hover:text-purple-700 dark:text-purple-400 dark:hover:bg-purple-950/20"
+      onClick={(e) => {
+        e.stopPropagation();
+        overlay.open(AddActionOverlay, {
+          serviceId: service.id,
+          serviceName: service.name,
+          externalAppId: service.externalAppId || "",
+          connectorId: service.connectorId || "",
+          connectionId: service.connectionId || "",
+        });
+      }}
+      type="button"
+    >
+      <Plus className="size-3" />
+      Add action
+    </button>
+  );
+}
+
+function InlineServiceSearch() {
+  const { open: openOverlay } = useOverlay();
+  const setMembraneServices = useSetAtom(membraneServicesAtom);
+  const [search, setSearch] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
+  const debouncedSearch = useDebounce(search, 300);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const { connectibles, isLoading, isFetchingMore, hasMore, error, fetchMore } =
+    useConnectibles({
+      search: debouncedSearch,
+      enabled: true,
+    });
+
+  // Infinite scroll via IntersectionObserver (uses viewport as root since
+  // the parent action-grid div handles scrolling)
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isFetchingMore) {
+          fetchMore();
+        }
+      },
+      { rootMargin: "100px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isFetchingMore, fetchMore]);
+
+  const { results: webResults, isLoading: isWebSearchLoading } = useWebSearch({
+    query: debouncedSearch,
+  });
+
+  const handleBuildIntegration = async () => {
+    const placeholder = await createPlaceholderService(search.trim());
+    if (placeholder) {
+      setMembraneServices((prev) => [placeholder, ...prev]);
+    }
+    openOverlay(BuildIntegrationOverlay, {
+      initialAppName: search.trim(),
+      placeholderServiceId: placeholder?.id,
+    });
+  };
+
+  const handleSelectWebResult = async (app: WebSearchApp) => {
+    const placeholder = await createPlaceholderService(app.name);
+    if (placeholder) {
+      setMembraneServices((prev) => [placeholder, ...prev]);
+    }
+    openOverlay(BuildIntegrationOverlay, {
+      initialAppName: app.name,
+      initialAppUrl: app.websiteUrl,
+      placeholderServiceId: placeholder?.id,
+    });
+  };
+
+  const createPlaceholderService = useCallback(
+    async (name: string): Promise<MembraneService | null> => {
+      try {
+        const response = await fetch("/api/membrane/integrations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!response.ok) return null;
+        const { service } = await response.json();
+        return service as MembraneService;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  const handleSelect = async (connectible: Connectible) => {
+    setIsAdding(true);
+    try {
+      const response = await fetch("/api/membrane/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: connectible.name,
+          logoUri: connectible.logoUri,
+          connectorId:
+            connectible.connectParameters.connectorId ||
+            connectible.connector?.id,
+          integrationKey: connectible.integration?.key,
+          externalAppId: connectible.externalApp?.id,
+        }),
+      });
+
+      if (!response.ok) {
+        toast.error("Failed to add service");
+        return;
+      }
+
+      const { service } = await response.json();
+      setMembraneServices((prev) => [service as MembraneService, ...prev]);
+      toast.success(`${connectible.name} added`);
+    } catch (err) {
+      console.error("Failed to add service:", err);
+      toast.error("Failed to add service");
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="relative shrink-0">
+        <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-9"
+          disabled={isAdding}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search services..."
+          value={search}
+        />
+      </div>
+
+      <div>
+        {isAdding ? (
+          <div className="flex items-center justify-center py-8">
+            <Spinner />
+          </div>
+        ) : (
+          <>
+            {/* Section 1: Pre-built in Membrane */}
+            <div className="mb-2 flex items-center gap-1.5">
+              <Plug className="size-3.5 text-muted-foreground" />
+              <span className="font-medium text-muted-foreground text-xs">
+                Pre-built in Membrane
+              </span>
+              {isLoading && <Spinner className="size-3" />}
+            </div>
+
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Spinner />
+              </div>
+            ) : error ? (
+              <div className="py-8 text-center">
+                <p className="text-destructive text-sm">
+                  Failed to load services
+                </p>
+                <p className="mt-1 text-muted-foreground text-xs">
+                  Please try again
+                </p>
+              </div>
+            ) : connectibles.length > 0 ? (
+              <div
+                className="grid gap-2"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
+                }}
+              >
+                {connectibles.map((connectible, index) => {
+                  const id =
+                    connectible.integration?.id ||
+                    connectible.externalApp?.id ||
+                    connectible.connector?.id ||
+                    connectible.name;
+
+                  return (
+                    <button
+                      className="group relative flex flex-col items-center gap-2 rounded-lg p-3"
+                      key={`${id}-${index}`}
+                      onClick={() => handleSelect(connectible)}
+                      type="button"
+                    >
+                      <div className="relative size-10">
+                        {connectible.logoUri ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            alt={`${connectible.name} logo`}
+                            className="size-full rounded object-contain"
+                            src={connectible.logoUri}
+                          />
+                        ) : (
+                          <div className="flex size-full items-center justify-center rounded bg-muted font-medium text-muted-foreground text-lg">
+                            {connectible.name[0]}
+                          </div>
+                        )}
+                        {connectible.integration && (
+                          <div className="absolute -top-1 -left-1 rounded-full bg-green-500 p-0.5">
+                            <Plug className="size-2.5 text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <span className="w-full truncate text-center text-xs">
+                        {connectible.name}
+                      </span>
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-foreground/80 font-medium text-background text-sm opacity-0 transition-opacity group-hover:opacity-100">
+                        Connect
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="py-4 text-center text-muted-foreground text-sm">
+                No services found
+              </p>
+            )}
+
+            {/* Sentinel for infinite scroll */}
+            <div ref={sentinelRef} />
+
+            {isFetchingMore && (
+              <div className="flex items-center justify-center py-4">
+                <Spinner />
+              </div>
+            )}
+
+            {/* Section 2: Build from scratch */}
+            {debouncedSearch.trim() && (
+              <div className="mt-4">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <Sparkles className="size-3.5 text-muted-foreground" />
+                  <span className="font-medium text-muted-foreground text-xs">
+                    Build from scratch
+                  </span>
+                  {isWebSearchLoading && <Spinner className="size-3" />}
+                </div>
+                {isWebSearchLoading && webResults.length === 0 ? (
+                  <p className="py-4 text-center text-muted-foreground text-sm">
+                    Searching the web...
+                  </p>
+                ) : (
+                  <div
+                    className="grid gap-2"
+                    style={{
+                      gridTemplateColumns:
+                        "repeat(auto-fill, minmax(80px, 1fr))",
+                    }}
+                  >
+                    {webResults.map((app) => (
+                      <button
+                        className="group relative flex flex-col items-center gap-1 rounded-lg p-3"
+                        key={app.websiteUrl}
+                        onClick={() => handleSelectWebResult(app)}
+                        type="button"
+                      >
+                        <div className="relative size-10">
+                          <div className="flex size-full items-center justify-center rounded bg-muted font-medium text-muted-foreground text-lg">
+                            {app.name[0]}
+                          </div>
+                          <div className="absolute -top-1 -left-1 rounded-full bg-blue-500 p-0.5">
+                            <Globe className="size-2.5 text-white" />
+                          </div>
+                        </div>
+                        <span className="w-full truncate text-center text-xs">
+                          {app.name}
+                        </span>
+                        <span className="w-full truncate text-center text-[10px] text-muted-foreground">
+                          {app.websiteUrl
+                            .replace(/^https?:\/\//, "")
+                            .replace(/\/$/, "")}
+                        </span>
+                        <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-foreground/80 font-medium text-background text-sm opacity-0 transition-opacity group-hover:opacity-100">
+                          Connect
+                        </div>
+                      </button>
+                    ))}
+                    {/* Build from scratch — always last in the grid */}
+                    {webResults.length > 0 && (
+                      <button
+                        className="relative flex flex-col items-center gap-1 rounded-lg border-2 border-dashed border-purple-300 p-3 transition-colors hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                        onClick={handleBuildIntegration}
+                        type="button"
+                      >
+                        <div className="flex size-10 items-center justify-center rounded bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300">
+                          <Sparkles className="size-5" />
+                        </div>
+                        <span className="w-full truncate text-center text-xs font-medium text-purple-600 dark:text-purple-300">
+                          Custom
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -239,7 +616,6 @@ export function ActionGrid({
   const { services: membraneServices } = useMembraneIntegrations();
   const inputRef = useRef<HTMLInputElement>(null);
   const isTouch = useIsTouch();
-  const overlay = useOverlay();
 
   const toggleViewMode = () => {
     const newMode = viewMode === "list" ? "grid" : "list";
@@ -334,6 +710,7 @@ export function ActionGrid({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Search and view mode controls — commented out during revamp
       <div className="flex shrink-0 gap-2">
         <div className="relative flex-1">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -395,25 +772,7 @@ export function ActionGrid({
           </TooltipProvider>
         )}
       </div>
-
-      <button
-        className="flex shrink-0 items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors hover:bg-muted"
-        onClick={() => {
-          overlay.open(AddServiceOverlay);
-        }}
-        type="button"
-      >
-        <span>Add service +</span>
-        <span className="flex items-center gap-1 text-muted-foreground text-xs">
-          Powered by Membrane
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            alt="Membrane"
-            className="size-3.5 dark:invert"
-            src="/membrane-logo.png"
-          />
-        </span>
-      </button>
+      */}
 
       <div
         className="min-h-0 flex-1 overflow-y-auto pb-4"
@@ -531,6 +890,9 @@ export function ActionGrid({
                       Membrane
                     </span>
                   </button>
+                  {service.connectionId && (
+                    <AddActionButton service={service} />
+                  )}
                 </div>
                 {!isCollapsed && (
                   <MembraneServiceActions
@@ -629,6 +991,15 @@ export function ActionGrid({
               </div>
             );
           })}
+
+        {/* Inline service search */}
+        {(filteredMembraneServices.length > 0 ||
+          visibleGroups.length > 0) && (
+          <div className="my-2 h-px bg-border" />
+        )}
+        <div className="px-1 py-2">
+          <InlineServiceSearch />
+        </div>
       </div>
     </div>
   );
