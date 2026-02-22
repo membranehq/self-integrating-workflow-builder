@@ -287,6 +287,34 @@ function BuildingFallback() {
   );
 }
 
+function WebFavicon({ name, url }: { name: string; url: string }) {
+  const [failed, setFailed] = useState(false);
+  const domain = useMemo(() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return null;
+    }
+  }, [url]);
+
+  if (!domain || failed) {
+    return (
+      <div className="flex size-full items-center justify-center rounded bg-muted font-medium text-muted-foreground text-lg">
+        {name[0]}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      alt={name}
+      className="size-full rounded object-contain"
+      onError={() => setFailed(true)}
+      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
+    />
+  );
+}
+
 function BuildSessionPlaceholder({
   session,
   onDismiss,
@@ -822,9 +850,7 @@ function InlineServiceSearch() {
                         type="button"
                       >
                         <div className="relative size-10">
-                          <div className="flex size-full items-center justify-center rounded bg-muted font-medium text-muted-foreground text-lg">
-                            {app.name[0]}
-                          </div>
+                          <WebFavicon name={app.name} url={app.websiteUrl} />
                           <div className="absolute -top-1 -left-1 rounded-full bg-blue-500 p-0.5">
                             <Globe className="size-2.5 text-white" />
                           </div>
