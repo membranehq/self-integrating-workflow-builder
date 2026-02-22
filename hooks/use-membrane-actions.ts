@@ -47,7 +47,8 @@ export function useMembraneActions(
       const params = new URLSearchParams();
       if (externalAppId) {
         params.set("externalAppId", externalAppId);
-      } else if (connectionId) {
+      }
+      if (connectionId) {
         params.set("connectionId", connectionId);
       }
       const response = await fetch(

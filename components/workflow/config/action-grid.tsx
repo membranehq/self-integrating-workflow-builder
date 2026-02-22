@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  AlertTriangle,
+  Check,
   ChevronRight,
   Eye,
   EyeOff,
@@ -13,10 +15,11 @@ import {
   Search,
   Settings,
   Sparkles,
+  X,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,13 +42,21 @@ import { BuildIntegrationOverlay } from "@/components/overlays/build-integration
 import { useOverlay } from "@/components/overlays/overlay-provider";
 import { useIntegrationApp } from "@membranehq/react";
 import { useTheme } from "next-themes";
+import { useAgentSession } from "@/hooks/use-agent-session";
 import { useConnectibles } from "@/hooks/use-connectibles";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useMembraneActions } from "@/hooks/use-membrane-actions";
 import { useMembraneIntegrations } from "@/hooks/use-membrane-integrations";
 import { useWebSearch } from "@/hooks/use-web-search";
 import { openMembraneConnection } from "@/lib/membrane-connect";
-import { membraneServicesAtom, type MembraneService } from "@/lib/membrane-store";
+import {
+  actionSessionsAtom,
+  type ActionSessionEntry,
+  buildSessionsAtom,
+  type BuildSessionEntry,
+  membraneServicesAtom,
+  type MembraneService,
+} from "@/lib/membrane-store";
 import type { Connectible } from "@/lib/types/connectible";
 import type { WebSearchApp } from "@/lib/types/web-search-app";
 import { useIsTouch } from "@/hooks/use-touch";
@@ -153,6 +164,195 @@ function getInitialViewMode(): ViewMode {
   }
 }
 
+const AGENT_PHRASES = [
+  "Agent is reading the docs",
+  "Consulting the API gods",
+  "Agent is wiring things up",
+  "Teaching the endpoint manners",
+  "Agent is on it",
+  "Almost sentient, not quite",
+  "Negotiating with the server",
+  "Agent is cooking",
+  "Reverse-engineering the universe",
+  "Connecting the dots, literally",
+];
+
+function AnimatedDots() {
+  const [dotCount, setDotCount] = useState(1);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDotCount((c) => (c % 3) + 1);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+  return (
+    <span className="inline-block w-[1em] text-left">
+      {".".repeat(dotCount)}
+    </span>
+  );
+}
+
+function useRotatingPhrase() {
+  const [index, setIndex] = useState(
+    () => Math.floor(Math.random() * AGENT_PHRASES.length),
+  );
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIndex((i) => (i + 1) % AGENT_PHRASES.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+  return AGENT_PHRASES[index];
+}
+
+function ActionSessionPlaceholder({
+  session,
+  onDismiss,
+}: {
+  session: ActionSessionEntry;
+  onDismiss: () => void;
+}) {
+  const isPending =
+    session.status === "pending" || session.status === "building";
+  const isSuccess = session.status === "success";
+  const isError = session.status === "error";
+  const phrase = useRotatingPhrase();
+
+  return (
+    <div
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm",
+        isError && "bg-red-50 dark:bg-red-950/20",
+        isSuccess && "bg-green-50 dark:bg-green-950/20",
+      )}
+    >
+      {isPending && (
+        <Spinner className="size-3.5 shrink-0 text-purple-500" />
+      )}
+      {isSuccess && (
+        <Check className="size-3.5 shrink-0 text-green-600" />
+      )}
+      {isError && (
+        <AlertTriangle className="size-3.5 shrink-0 text-red-500" />
+      )}
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate font-medium",
+          isPending && "text-muted-foreground",
+        )}
+      >
+        {session.description}
+      </span>
+      {isPending && (
+        <span className="shrink-0 text-muted-foreground text-xs whitespace-nowrap">
+          {phrase}
+          <AnimatedDots />
+        </span>
+      )}
+      {isSuccess && (
+        <span className="shrink-0 text-green-600 text-xs">Ready</span>
+      )}
+      {isError && (
+        <span className="shrink-0 truncate text-red-500 text-xs">
+          {session.errorMessage || "Something went wrong"}
+        </span>
+      )}
+      {isError && (
+        <button
+          className="shrink-0 rounded p-0.5 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30"
+          onClick={onDismiss}
+          title="Dismiss"
+          type="button"
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BuildingFallback() {
+  const phrase = useRotatingPhrase();
+  return (
+    <div className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm">
+      <Spinner className="size-3.5 shrink-0 text-purple-500" />
+      <span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
+        Building integration
+      </span>
+      <span className="shrink-0 text-muted-foreground text-xs whitespace-nowrap">
+        {phrase}
+        <AnimatedDots />
+      </span>
+    </div>
+  );
+}
+
+function BuildSessionPlaceholder({
+  session,
+  onDismiss,
+}: {
+  session: BuildSessionEntry;
+  onDismiss: () => void;
+}) {
+  const isPending =
+    session.status === "pending" || session.status === "building";
+  const isSuccess = session.status === "success";
+  const isError = session.status === "error";
+  const phrase = useRotatingPhrase();
+
+  return (
+    <div
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm",
+        isError && "bg-red-50 dark:bg-red-950/20",
+        isSuccess && "bg-green-50 dark:bg-green-950/20",
+      )}
+    >
+      {isPending && (
+        <Spinner className="size-3.5 shrink-0 text-purple-500" />
+      )}
+      {isSuccess && (
+        <Check className="size-3.5 shrink-0 text-green-600" />
+      )}
+      {isError && (
+        <AlertTriangle className="size-3.5 shrink-0 text-red-500" />
+      )}
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate font-medium",
+          isPending && "text-muted-foreground",
+        )}
+      >
+        {isSuccess ? "Integration ready" : "Building integration"}
+      </span>
+      {isPending && (
+        <span className="shrink-0 text-muted-foreground text-xs whitespace-nowrap">
+          {phrase}
+          <AnimatedDots />
+        </span>
+      )}
+      {isSuccess && (
+        <span className="shrink-0 text-green-600 text-xs">Ready</span>
+      )}
+      {isError && (
+        <span className="shrink-0 truncate text-red-500 text-xs">
+          {session.errorMessage || "Something went wrong"}
+        </span>
+      )}
+      {isError && (
+        <button
+          className="shrink-0 rounded p-0.5 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30"
+          onClick={onDismiss}
+          title="Dismiss"
+          type="button"
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function MembraneServiceActions({
   service,
   onSelectAction,
@@ -168,19 +368,30 @@ function MembraneServiceActions({
   );
   const overlay = useOverlay();
   const integrationApp = useIntegrationApp();
-  const { theme } = useTheme();
+  const { resolvedTheme } = useTheme();
   const setMembraneServices = useSetAtom(membraneServicesAtom);
+  const actionSessions = useAtomValue(actionSessionsAtom);
+  const setActionSessions = useSetAtom(actionSessionsAtom);
+  const buildSessions = useAtomValue(buildSessionsAtom);
+  const setBuildSessions = useSetAtom(buildSessionsAtom);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [preBuiltExpanded, setPreBuiltExpanded] = useState(false);
+
+  const pendingSessions = actionSessions.filter(
+    (s) => s.serviceId === service.id,
+  );
+  const pendingBuildSessions = buildSessions.filter(
+    (s) => s.placeholderServiceId === service.id,
+  );
 
   const handleAddConnection = async () => {
     if (!service.connectorId || !integrationApp) return;
     setIsConnecting(true);
     try {
-      const membraneTheme = theme === "light" || theme === "dark" ? theme : "auto";
       const result = await openMembraneConnection(
         integrationApp,
         service.connectorId,
-        { theme: membraneTheme },
+        { theme: resolvedTheme === "dark" ? "dark" : "light" },
       );
       if (result?.connectionId) {
         await fetch("/api/membrane/integrations", {
@@ -211,10 +422,23 @@ function MembraneServiceActions({
   // State 1: No connector yet — agent still building
   if (!service.connectionId && !service.connectorId) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 text-muted-foreground text-xs">
-        <Spinner className="size-3" />
-        Building integration...
-      </div>
+      <>
+        {pendingBuildSessions.length > 0 ? (
+          pendingBuildSessions.map((session) => (
+            <BuildSessionPlaceholder
+              key={session.sessionId}
+              onDismiss={() =>
+                setBuildSessions((prev) =>
+                  prev.filter((s) => s.sessionId !== session.sessionId),
+                )
+              }
+              session={session}
+            />
+          ))
+        ) : (
+          <BuildingFallback />
+        )}
+      </>
     );
   }
 
@@ -244,39 +468,70 @@ function MembraneServiceActions({
     );
   }
 
-  // Sort: custom (non-public) first, then pre-built (public)
-  const sortedActions = [...actions].sort((a, b) => {
-    if (a.isPublic === b.isPublic) return 0;
-    return a.isPublic ? 1 : -1;
-  });
+  const customActions = actions.filter((a) => !a.isPublic);
+  const preBuiltActions = actions.filter((a) => a.isPublic);
+
+  const renderAction = (action: (typeof actions)[0]) => (
+    <button
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+        disabled && "pointer-events-none opacity-50",
+      )}
+      disabled={disabled}
+      key={`${service.id}:${action.key}`}
+      onClick={() =>
+        onSelectAction(
+          `membrane:${service.id}:${action.key}|${action.name}`,
+        )
+      }
+      type="button"
+    >
+      {action.isPublic ? (
+        <Zap className="size-3.5 shrink-0 text-muted-foreground" />
+      ) : (
+        <Sparkles className="size-3.5 shrink-0 text-purple-500" />
+      )}
+      <span className="min-w-0 flex-1 truncate">
+        <span className="font-medium">{action.name}</span>
+      </span>
+    </button>
+  );
 
   return (
     <>
-      {sortedActions.map((action) => (
-        <button
-          className={cn(
-            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
-            disabled && "pointer-events-none opacity-50",
-          )}
-          disabled={disabled}
-          key={`${service.id}:${action.key}`}
-          onClick={() =>
-            onSelectAction(
-              `membrane:${service.id}:${action.key}|${action.name}`,
+      {pendingSessions.map((session) => (
+        <ActionSessionPlaceholder
+          key={session.sessionId}
+          onDismiss={() =>
+            setActionSessions((prev) =>
+              prev.filter((s) => s.sessionId !== session.sessionId),
             )
           }
-          type="button"
-        >
-          {action.isPublic ? (
-            <Zap className="size-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <Sparkles className="size-3.5 shrink-0 text-purple-500" />
-          )}
-          <span className="min-w-0 flex-1 truncate">
-            <span className="font-medium">{action.name}</span>
-          </span>
-        </button>
+          session={session}
+        />
       ))}
+      {customActions.map(renderAction)}
+      {preBuiltActions.length > 0 && (
+        <div>
+          <button
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-muted-foreground text-xs font-medium transition-colors hover:text-foreground"
+            onClick={() => setPreBuiltExpanded((v) => !v)}
+            type="button"
+          >
+            <ChevronRight
+              className={cn(
+                "size-3 transition-transform",
+                preBuiltExpanded && "rotate-90",
+              )}
+            />
+            Pre-built actions
+            <span className="text-[10px] tabular-nums">
+              ({preBuiltActions.length})
+            </span>
+          </button>
+          {preBuiltExpanded && preBuiltActions.map(renderAction)}
+        </div>
+      )}
     </>
   );
 }
@@ -307,6 +562,7 @@ function AddActionButton({ service }: { service: MembraneService }) {
 function InlineServiceSearch() {
   const { open: openOverlay } = useOverlay();
   const setMembraneServices = useSetAtom(membraneServicesAtom);
+  const { startBuildSession } = useAgentSession();
   const [search, setSearch] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const debouncedSearch = useDebounce(search, 300);
@@ -383,6 +639,20 @@ function InlineServiceSearch() {
   );
 
   const handleSelect = async (connectible: Connectible) => {
+    const hasConnector =
+      connectible.connectParameters.connectorId || connectible.connector?.id;
+
+    // Apps without a connector — start build session directly
+    if (!hasConnector) {
+      startBuildSession(
+        connectible.name,
+        connectible.externalApp?.websiteUrl || "",
+        undefined,
+        connectible.externalApp?.id,
+      );
+      return;
+    }
+
     setIsAdding(true);
     try {
       const response = await fetch("/api/membrane/integrations", {
@@ -778,19 +1048,6 @@ export function ActionGrid({
         className="min-h-0 flex-1 overflow-y-auto pb-4"
         data-testid="action-grid"
       >
-        {filteredActions.length === 0 &&
-          filteredMembraneServices.length === 0 && (
-            <p className="py-4 text-center text-muted-foreground text-sm">
-              No actions found
-            </p>
-          )}
-        {filteredActions.length > 0 &&
-          visibleGroups.length === 0 &&
-          filteredMembraneServices.length === 0 && (
-            <p className="py-4 text-center text-muted-foreground text-sm">
-              All groups are hidden
-            </p>
-          )}
 
         {/* Grid View */}
         {viewMode === "grid" &&
@@ -997,7 +1254,7 @@ export function ActionGrid({
           visibleGroups.length > 0) && (
           <div className="my-2 h-px bg-border" />
         )}
-        <div className="px-1 py-2">
+        <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
           <InlineServiceSearch />
         </div>
       </div>

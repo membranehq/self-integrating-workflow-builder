@@ -89,6 +89,47 @@ export async function POST(request: Request) {
   }
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
+
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const [deleted] = await db
+      .delete(membraneServices)
+      .where(
+        and(
+          eq(membraneServices.id, id),
+          eq(membraneServices.userId, session.user.id),
+        ),
+      )
+      .returning();
+
+    if (!deleted) {
+      return NextResponse.json({ error: "Service not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[Membrane Services] DELETE error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete service" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function PATCH(request: Request) {
   try {
     const session = await auth.api.getSession({

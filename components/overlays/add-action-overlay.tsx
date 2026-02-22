@@ -71,6 +71,7 @@ export function AddActionOverlay({
 
   const handleGenerate = () => {
     startAddActionSession(
+      serviceId,
       serviceName,
       externalAppId,
       connectorId,

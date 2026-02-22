@@ -11,6 +11,7 @@ type BuildIntegrationOverlayProps = {
   overlayId: string;
   initialAppName: string;
   initialAppUrl?: string;
+  externalAppId?: string;
   placeholderServiceId?: string;
 };
 
@@ -18,6 +19,7 @@ export function BuildIntegrationOverlay({
   overlayId,
   initialAppName,
   initialAppUrl,
+  externalAppId,
   placeholderServiceId,
 }: BuildIntegrationOverlayProps) {
   const { closeAll } = useOverlay();
@@ -26,7 +28,7 @@ export function BuildIntegrationOverlay({
   const [appUrl, setAppUrl] = useState(initialAppUrl || "");
 
   const handleGenerate = () => {
-    startBuildSession(appName.trim(), appUrl.trim(), placeholderServiceId);
+    startBuildSession(appName.trim(), appUrl.trim(), placeholderServiceId, externalAppId);
     closeAll();
   };
 

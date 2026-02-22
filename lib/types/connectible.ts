@@ -20,6 +20,7 @@ export interface Connectible {
     id: string;
     key?: string;
     name?: string;
+    websiteUrl?: string;
   };
   connector?: {
     id: string;

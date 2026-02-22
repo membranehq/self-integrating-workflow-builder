@@ -35,41 +35,49 @@ export async function GET(request: Request) {
       session.user.name
     );
 
-    const params = new URLSearchParams({ limit: "100" });
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    // Fetch public actions (by externalAppId) and custom actions (by connectionId)
+    // in parallel when both are available, then merge.
+    const fetches: Promise<Response>[] = [];
+    if (externalAppId) {
+      const params = new URLSearchParams({ limit: "100", externalAppId });
+      fetches.push(fetch(`${API_URI}/actions?${params.toString()}`, { headers }));
+    }
     if (connectionId) {
-      params.set("connectionId", connectionId);
-    } else if (externalAppId) {
-      params.set("externalAppId", externalAppId);
+      const params = new URLSearchParams({ limit: "100", connectionId });
+      fetches.push(fetch(`${API_URI}/actions?${params.toString()}`, { headers }));
     }
 
-    const response = await fetch(`${API_URI}/actions?${params.toString()}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("[Membrane Actions] GET failed:", response.status, text);
-      return NextResponse.json(
-        { error: "Failed to fetch actions" },
-        { status: response.status }
-      );
+    const responses = await Promise.all(fetches);
+    for (const resp of responses) {
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error("[Membrane Actions] GET failed:", resp.status, text);
+        return NextResponse.json(
+          { error: "Failed to fetch actions" },
+          { status: resp.status }
+        );
+      }
     }
 
-    const data = await response.json();
-    const items = data.items || [];
-
-    const actions = items
-      .filter((item: Record<string, unknown>) => item.id)
-      .map((item: Record<string, unknown>) => ({
-        key: item.id as string,
-        name: (item.name as string) || (item.id as string) || "",
-        description: (item.description as string) || undefined,
-        inputSchema: (item.inputSchema as Record<string, unknown>) || undefined,
-        isPublic: !!(item.isPublic),
-      }));
+    const allData = await Promise.all(responses.map((r) => r.json()));
+    const actions: { key: string; name: string; description?: string; inputSchema?: Record<string, unknown>; isPublic: boolean }[] = [];
+    for (const data of allData) {
+      for (const item of (data.items || []) as Record<string, unknown>[]) {
+        if (!item.id) continue;
+        actions.push({
+          key: item.id as string,
+          name: (item.name as string) || (item.id as string) || "",
+          description: (item.description as string) || undefined,
+          inputSchema: (item.inputSchema as Record<string, unknown>) || undefined,
+          isPublic: !!(item.isPublic),
+        });
+      }
+    }
 
     return NextResponse.json({ actions });
   } catch (error) {

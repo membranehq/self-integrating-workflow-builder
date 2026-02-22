@@ -133,7 +133,6 @@ function buildConnectibles(
   for (const el of appElements) {
     const appObjectId = el.id as string;
     const appUuid = el.uuid as string | undefined;
-    if (!el.defaultConnectorId) continue;
 
     const hasIntegration = connectibles.some(
       (c) =>
@@ -146,16 +145,21 @@ function buildConnectibles(
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
 
-    const connector = connectorById.get(el.defaultConnectorId as string);
+    const connector = el.defaultConnectorId
+      ? connectorById.get(el.defaultConnectorId as string)
+      : undefined;
 
     const connectible: Connectible = {
       name: (el.name as string) || (el.key as string),
       logoUri: el.logoUri as string | undefined,
-      connectParameters: { connectorId: el.defaultConnectorId as string },
+      connectParameters: el.defaultConnectorId
+        ? { connectorId: el.defaultConnectorId as string }
+        : {},
       externalApp: {
         id: appObjectId,
         key: el.key as string | undefined,
         name: el.name as string | undefined,
+        websiteUrl: el.appUri as string | undefined,
       },
     };
 

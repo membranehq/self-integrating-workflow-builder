@@ -5,6 +5,8 @@ import { useSetAtom } from "jotai";
 import { toast } from "sonner";
 import {
   actionsRefetchAtom,
+  actionSessionsAtom,
+  buildSessionsAtom,
   membraneServicesAtom,
   type MembraneService,
 } from "@/lib/membrane-store";
@@ -21,7 +23,9 @@ type BuildIntegrationSession = {
 type AddActionSession = {
   type: "add-action";
   sessionId: string;
+  serviceId: string;
   serviceName: string;
+  description: string;
   externalAppId: string;
   connectorId: string;
   connectionId: string;
@@ -35,10 +39,6 @@ type SessionStatus = {
   error?: { message: string };
   summary?: string;
 };
-
-function toastId(session: StoredSession): string {
-  return `agent-session-${session.sessionId}`;
-}
 
 function getStoredSessions(): StoredSession[] {
   try {
@@ -77,6 +77,18 @@ async function refetchIntegrations(): Promise<MembraneService[]> {
   if (!response.ok) return [];
   const data = await response.json();
   return data.services || [];
+}
+
+/** Delete a placeholder service from the DB when a build session fails. */
+async function deletePlaceholderService(serviceId?: string): Promise<void> {
+  if (!serviceId) return;
+  try {
+    await fetch(`/api/membrane/integrations?id=${serviceId}`, {
+      method: "DELETE",
+    });
+  } catch {
+    // Best-effort cleanup
+  }
 }
 
 /**
@@ -192,7 +204,14 @@ function extractConnectorDetails(text: string): {
   return { connectorId, connectorName, appName };
 }
 
-function buildIntegrationPrompt(appName: string, appUrl: string): string {
+function buildIntegrationPrompt(appName: string, appUrl: string, externalAppId?: string): string {
+  if (externalAppId) {
+    return `Build new app connector.
+App Name: ${appName.trim()}
+App URL: ${appUrl.trim() || "Not provided"}
+External App ID: ${externalAppId}
+This app already exists in the system. Look up the external app by its ID to get more details. Link the new connector to this existing app.`;
+  }
   return `Build new app connector.
 App Name: ${appName.trim()}
 App URL: ${appUrl.trim() || "Not provided"}`;
@@ -202,6 +221,7 @@ function addActionPrompt(
   serviceName: string,
   connectorId: string,
   connectionId: string,
+  externalAppId: string,
   actionDescription: string,
 ): string {
   return `I need to create a new action for a tenant-level connector.
@@ -209,23 +229,15 @@ function addActionPrompt(
 Connector ID: ${connectorId}
 Connector Name: ${serviceName}
 Connection ID: ${connectionId || "Not available"}
+External App ID: ${externalAppId || "Not available"}
+External App Name: ${serviceName}
+
+The External App entity contains the app's URL. Use it to find and research the app's API documentation before building the action.
 
 User's description of what the action should do:
-${actionDescription.trim()}`;
-}
+${actionDescription.trim()}
 
-function getLoadingMessage(session: StoredSession): string {
-  if (session.type === "build-integration") {
-    return `Building ${session.appName} integration. This usually takes a couple of minutes...`;
-  }
-  return `Adding action to ${session.serviceName}. This usually takes a couple of minutes...`;
-}
-
-function getSuccessMessage(session: StoredSession): string {
-  if (session.type === "build-integration") {
-    return `${session.appName} integration built! You can find it in the services list.`;
-  }
-  return `New action added to ${session.serviceName}!`;
+IMPORTANT: If there is already a pre-built action that does the same as the one requested by the user - duplicate it, but don't stop the session until the action is created.`;
 }
 
 function getFailureMessage(session: StoredSession, status: string): string {
@@ -245,6 +257,8 @@ export function useAgentSession() {
   );
   const setMembraneServices = useSetAtom(membraneServicesAtom);
   const setActionsRefetch = useSetAtom(actionsRefetchAtom);
+  const setActionSessions = useSetAtom(actionSessionsAtom);
+  const setBuildSessions = useSetAtom(buildSessionsAtom);
   const pollingRef = useRef<Set<string>>(new Set());
 
   const isBuilding = buildingSessionIds.size > 0;
@@ -255,11 +269,25 @@ export function useAgentSession() {
       pollingRef.current.add(session.sessionId);
       setBuildingSessionIds((prev) => new Set([...prev, session.sessionId]));
 
-      const tid = toastId(session);
-      toast.loading(getLoadingMessage(session), {
-        id: tid,
-        duration: Number.POSITIVE_INFINITY,
-      });
+      const isAddAction = session.type === "add-action";
+
+      if (isAddAction) {
+        setActionSessions((prev) =>
+          prev.map((s) =>
+            s.sessionId === session.sessionId
+              ? { ...s, status: "building" as const }
+              : s,
+          ),
+        );
+      } else {
+        setBuildSessions((prev) =>
+          prev.map((s) =>
+            s.sessionId === session.sessionId
+              ? { ...s, status: "building" as const }
+              : s,
+          ),
+        );
+      }
 
       try {
         while (pollingRef.current.has(session.sessionId)) {
@@ -280,12 +308,30 @@ export function useAgentSession() {
             continue;
           }
 
-          if (data.status === "failed" || data.status === "cancelled") {
+          if (data.status === "failed" || data.status === "cancelled" || data.status === "stopped") {
             removeStoredSession(session.sessionId);
-            toast.error(getFailureMessage(session, data.status), {
-              id: tid,
-              closeButton: true,
-            });
+            if (isAddAction) {
+              setActionSessions((prev) =>
+                prev.map((s) =>
+                  s.sessionId === session.sessionId
+                    ? { ...s, status: "error" as const, errorMessage: getFailureMessage(session, data.status) }
+                    : s,
+                ),
+              );
+            } else {
+              if (session.type === "build-integration") {
+                await deletePlaceholderService(session.placeholderServiceId);
+                const services = await refetchIntegrations();
+                setMembraneServices(services);
+              }
+              setBuildSessions((prev) =>
+                prev.map((s) =>
+                  s.sessionId === session.sessionId
+                    ? { ...s, status: "error" as const, errorMessage: getFailureMessage(session, data.status) }
+                    : s,
+                ),
+              );
+            }
             break;
           }
 
@@ -296,14 +342,33 @@ export function useAgentSession() {
               await addBuiltService(session.sessionId, session.appName, session.placeholderServiceId);
               const services = await refetchIntegrations();
               setMembraneServices(services);
+              setBuildSessions((prev) =>
+                prev.map((s) =>
+                  s.sessionId === session.sessionId
+                    ? { ...s, status: "success" as const }
+                    : s,
+                ),
+              );
+              setTimeout(() => {
+                setBuildSessions((prev) =>
+                  prev.filter((s) => s.sessionId !== session.sessionId),
+                );
+              }, 2000);
             } else {
               setActionsRefetch((c) => c + 1);
+              setActionSessions((prev) =>
+                prev.map((s) =>
+                  s.sessionId === session.sessionId
+                    ? { ...s, status: "success" as const }
+                    : s,
+                ),
+              );
+              setTimeout(() => {
+                setActionSessions((prev) =>
+                  prev.filter((s) => s.sessionId !== session.sessionId),
+                );
+              }, 2000);
             }
-
-            toast.success(getSuccessMessage(session), {
-              id: tid,
-              closeButton: true,
-            });
             break;
           }
         }
@@ -316,27 +381,56 @@ export function useAgentSession() {
         });
       }
     },
-    [setMembraneServices, setActionsRefetch],
+    [setMembraneServices, setActionsRefetch, setActionSessions, setBuildSessions],
   );
 
   const startBuildSession = useCallback(
-    async (appName: string, appUrl: string, placeholderServiceId?: string) => {
-      const prompt = buildIntegrationPrompt(appName, appUrl);
+    async (appName: string, appUrl: string, placeholderServiceId?: string, externalAppId?: string) => {
+      const prompt = buildIntegrationPrompt(appName, appUrl, externalAppId);
+
+      // Create placeholder service in DB if not already provided
+      let serviceId = placeholderServiceId;
+      if (!serviceId) {
+        try {
+          const res = await fetch("/api/membrane/integrations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: appName }),
+          });
+          if (res.ok) {
+            const { service } = await res.json();
+            serviceId = service.id;
+            setMembraneServices((prev) => [service as MembraneService, ...prev]);
+          }
+        } catch {
+          // Continue without placeholder
+        }
+      }
+
       const session: BuildIntegrationSession = {
         type: "build-integration",
         sessionId: "", // filled after POST
         appName,
-        placeholderServiceId,
+        placeholderServiceId: serviceId,
       };
 
-      const tid = toastId({ ...session, sessionId: "pending-build" });
-      toast.loading(
-        getLoadingMessage({ ...session, sessionId: "pending-build" }),
-        {
-          id: tid,
-          duration: Number.POSITIVE_INFINITY,
-        },
+      toast.info(
+        `An agent is building the ${appName} integration. This can take a couple of minutes — you can track progress in the side panel.`,
+        { duration: 6000, closeButton: true },
       );
+
+      const tempId = `pending-build-${Date.now()}`;
+
+      // Show inline placeholder immediately
+      setBuildSessions((prev) => [
+        ...prev,
+        {
+          sessionId: tempId,
+          placeholderServiceId: serviceId,
+          appName,
+          status: "pending" as const,
+        },
+      ]);
 
       try {
         const response = await fetch("/api/membrane/sessions", {
@@ -347,31 +441,46 @@ export function useAgentSession() {
 
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
-          toast.error(data.error || "Failed to start integration build", {
-            id: tid,
-            closeButton: true,
-          });
+          setBuildSessions((prev) =>
+            prev.map((s) =>
+              s.sessionId === tempId
+                ? { ...s, status: "error" as const, errorMessage: data.error || "Failed to start integration build" }
+                : s,
+            ),
+          );
           return;
         }
 
         const { sessionId } = await response.json();
         session.sessionId = sessionId;
         addStoredSession(session);
-        // Dismiss the pending toast, polling will show its own
-        toast.dismiss(tid);
+
+        // Update placeholder with real sessionId
+        setBuildSessions((prev) =>
+          prev.map((s) =>
+            s.sessionId === tempId
+              ? { ...s, sessionId, status: "building" as const }
+              : s,
+          ),
+        );
+
         pollSession(session);
       } catch {
-        toast.error("Failed to start integration build", {
-          id: tid,
-          closeButton: true,
-        });
+        setBuildSessions((prev) =>
+          prev.map((s) =>
+            s.sessionId === tempId
+              ? { ...s, status: "error" as const, errorMessage: "Failed to start integration build" }
+              : s,
+          ),
+        );
       }
     },
-    [pollSession],
+    [pollSession, setBuildSessions, setMembraneServices],
   );
 
   const startAddActionSession = useCallback(
     async (
+      serviceId: string,
       serviceName: string,
       externalAppId: string,
       connectorId: string,
@@ -382,22 +491,37 @@ export function useAgentSession() {
         serviceName,
         connectorId,
         connectionId,
+        externalAppId,
         actionDescription,
       );
       const session: AddActionSession = {
         type: "add-action",
         sessionId: "", // filled after POST
+        serviceId,
         serviceName,
+        description: actionDescription,
         externalAppId,
         connectorId,
         connectionId,
       };
 
-      const tid = toastId({ ...session, sessionId: "pending-action" });
-      toast.loading(
-        getLoadingMessage({ ...session, sessionId: "pending-action" }),
-        { id: tid, duration: Number.POSITIVE_INFINITY },
+      toast.info(
+        `An agent is building your "${actionDescription}" action for ${serviceName}. This can take a couple of minutes — you can track progress in the side panel.`,
+        { duration: 6000, closeButton: true },
       );
+
+      const tempId = `pending-${Date.now()}`;
+
+      // Show inline placeholder immediately
+      setActionSessions((prev) => [
+        ...prev,
+        {
+          sessionId: tempId,
+          serviceId,
+          description: actionDescription,
+          status: "pending" as const,
+        },
+      ]);
 
       try {
         const response = await fetch("/api/membrane/sessions", {
@@ -408,26 +532,41 @@ export function useAgentSession() {
 
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
-          toast.error(data.error || "Failed to start action creation", {
-            id: tid,
-            closeButton: true,
-          });
+          setActionSessions((prev) =>
+            prev.map((s) =>
+              s.sessionId === tempId
+                ? { ...s, status: "error" as const, errorMessage: data.error || "Failed to start action creation" }
+                : s,
+            ),
+          );
           return;
         }
 
         const { sessionId } = await response.json();
         session.sessionId = sessionId;
         addStoredSession(session);
-        toast.dismiss(tid);
+
+        // Update placeholder with real sessionId
+        setActionSessions((prev) =>
+          prev.map((s) =>
+            s.sessionId === tempId
+              ? { ...s, sessionId, status: "building" as const }
+              : s,
+          ),
+        );
+
         pollSession(session);
       } catch {
-        toast.error("Failed to start action creation", {
-          id: tid,
-          closeButton: true,
-        });
+        setActionSessions((prev) =>
+          prev.map((s) =>
+            s.sessionId === tempId
+              ? { ...s, status: "error" as const, errorMessage: "Failed to start action creation" }
+              : s,
+          ),
+        );
       }
     },
-    [pollSession],
+    [pollSession, setActionSessions],
   );
 
   // On mount, check for active sessions and resume polling
@@ -436,12 +575,57 @@ export function useAgentSession() {
     if (stored.length === 0) return;
 
     async function checkAndResume(session: StoredSession) {
+      // For add-action sessions with required fields, show inline placeholder immediately
+      const isAddAction =
+        session.type === "add-action" && session.serviceId && session.description;
+      const isBuildIntegration = session.type === "build-integration";
+
+      if (isAddAction) {
+        setActionSessions((prev) => {
+          if (prev.some((s) => s.sessionId === session.sessionId)) return prev;
+          return [
+            ...prev,
+            {
+              sessionId: session.sessionId,
+              serviceId: session.serviceId,
+              description: session.description,
+              status: "building" as const,
+            },
+          ];
+        });
+      }
+
+      if (isBuildIntegration) {
+        setBuildSessions((prev) => {
+          if (prev.some((s) => s.sessionId === session.sessionId)) return prev;
+          return [
+            ...prev,
+            {
+              sessionId: session.sessionId,
+              placeholderServiceId: session.placeholderServiceId,
+              appName: session.appName,
+              status: "building" as const,
+            },
+          ];
+        });
+      }
+
       try {
         const response = await fetch(
           `/api/membrane/sessions?sessionId=${session.sessionId}`,
         );
         if (!response.ok) {
           removeStoredSession(session.sessionId);
+          if (isAddAction) {
+            setActionSessions((prev) =>
+              prev.filter((s) => s.sessionId !== session.sessionId),
+            );
+          }
+          if (isBuildIntegration) {
+            setBuildSessions((prev) =>
+              prev.filter((s) => s.sessionId !== session.sessionId),
+            );
+          }
           return;
         }
         const data: SessionStatus = await response.json();
@@ -452,28 +636,84 @@ export function useAgentSession() {
             await addBuiltService(session.sessionId, session.appName, session.placeholderServiceId);
             const services = await refetchIntegrations();
             setMembraneServices(services);
+            setBuildSessions((prev) =>
+              prev.map((s) =>
+                s.sessionId === session.sessionId
+                  ? { ...s, status: "success" as const }
+                  : s,
+              ),
+            );
+            setTimeout(() => {
+              setBuildSessions((prev) =>
+                prev.filter((s) => s.sessionId !== session.sessionId),
+              );
+            }, 2000);
           } else {
             setActionsRefetch((c) => c + 1);
+            if (isAddAction) {
+              setActionSessions((prev) =>
+                prev.map((s) =>
+                  s.sessionId === session.sessionId
+                    ? { ...s, status: "success" as const }
+                    : s,
+                ),
+              );
+              setTimeout(() => {
+                setActionSessions((prev) =>
+                  prev.filter((s) => s.sessionId !== session.sessionId),
+                );
+              }, 2000);
+            }
           }
           return;
         }
-        if (data.status === "failed" || data.status === "cancelled") {
+        if (data.status === "failed" || data.status === "cancelled" || data.status === "stopped") {
           removeStoredSession(session.sessionId);
-          toast.error(getFailureMessage(session, data.status), {
-            closeButton: true,
-          });
+          if (isAddAction) {
+            setActionSessions((prev) =>
+              prev.map((s) =>
+                s.sessionId === session.sessionId
+                  ? { ...s, status: "error" as const, errorMessage: getFailureMessage(session, data.status) }
+                  : s,
+              ),
+            );
+          }
+          if (isBuildIntegration) {
+            if (session.type === "build-integration") {
+              await deletePlaceholderService(session.placeholderServiceId);
+              const services = await refetchIntegrations();
+              setMembraneServices(services);
+            }
+            setBuildSessions((prev) =>
+              prev.map((s) =>
+                s.sessionId === session.sessionId
+                  ? { ...s, status: "error" as const, errorMessage: getFailureMessage(session, data.status) }
+                  : s,
+              ),
+            );
+          }
           return;
         }
 
-        // Still running — resume polling with toast
+        // Still running — resume polling
         pollSession(session);
       } catch {
         removeStoredSession(session.sessionId);
+        if (isAddAction) {
+          setActionSessions((prev) =>
+            prev.filter((s) => s.sessionId !== session.sessionId),
+          );
+        }
+        if (isBuildIntegration) {
+          setBuildSessions((prev) =>
+            prev.filter((s) => s.sessionId !== session.sessionId),
+          );
+        }
       }
     }
 
     stored.forEach(checkAndResume);
-  }, [pollSession, setMembraneServices]);
+  }, [pollSession, setMembraneServices, setActionSessions, setBuildSessions]);
 
   return { startBuildSession, startAddActionSession, isBuilding };
 }
