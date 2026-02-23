@@ -237,7 +237,9 @@ The External App entity contains the app's URL. Use it to find and research the 
 User's description of what the action should do:
 ${actionDescription.trim()}
 
-IMPORTANT: If there is already a pre-built action that does the same as the one requested by the user - duplicate it, but don't stop the session until the action is created.`;
+IMPORTANT RULES:
+- If there is already a pre-built action that does the same as the one requested by the user - duplicate it, but don't stop the session until the action is created.
+- When using the "api-request-to-external-app" action type, use relative paths (e.g. "/conversations.members") instead of full URLs. This action type automatically handles the base URL and authentication.`;
 }
 
 function getFailureMessage(session: StoredSession, status: string): string {
