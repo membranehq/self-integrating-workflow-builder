@@ -68,11 +68,13 @@ const Home = () => {
   }, [session]);
 
   // Handler to add the first node (replaces the "add" node)
-  const handleAddNode = useCallback(() => {
+  const handleAddNode = useCallback(async () => {
+    await ensureSession();
+    await ensureEmail();
     const newNode: WorkflowNode = createDefaultTriggerNode();
     // Replace all nodes (removes the "add" node)
     setNodes([newNode]);
-  }, [setNodes]);
+  }, [setNodes, ensureSession, ensureEmail]);
 
   // Initialize with a temporary "add" node on mount
   useEffect(() => {
@@ -107,9 +109,7 @@ const Home = () => {
       hasCreatedWorkflowRef.current = true;
 
       try {
-        await ensureSession();
-        await ensureEmail();
-
+        // Session and email are already ensured in handleAddNode
         // Create workflow with all real nodes
         const newWorkflow = await api.workflow.create({
           name: "Untitled Workflow",
@@ -132,7 +132,7 @@ const Home = () => {
     };
 
     createWorkflowAndRedirect();
-  }, [nodes, edges, router, ensureSession, ensureEmail, setIsTransitioningFromHomepage]);
+  }, [nodes, edges, router, setIsTransitioningFromHomepage]);
 
   // Canvas and toolbar are rendered by PersistentCanvas in the layout
   return null;
