@@ -139,8 +139,19 @@ const plugins = [
     : []),
 ];
 
+// Build trusted origins for CORS/origin validation
+function getTrustedOrigins(): string[] {
+  const origins: string[] = [];
+  if (process.env.BETTER_AUTH_URL) origins.push(process.env.BETTER_AUTH_URL);
+  if (process.env.NEXT_PUBLIC_APP_URL) origins.push(process.env.NEXT_PUBLIC_APP_URL);
+  if (process.env.VERCEL_URL) origins.push(`https://${process.env.VERCEL_URL}`);
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) origins.push(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
+  return origins;
+}
+
 export const auth = betterAuth({
   baseURL: getBaseURL(),
+  trustedOrigins: getTrustedOrigins(),
   database: drizzleAdapter(db, {
     provider: "pg",
     schema,
