@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     const token = await generateMembraneToken(
       session.user.id,
       session.user.name,
+      session.user.email,
     );
 
     const body: Record<string, string> = { prompt };
@@ -108,6 +109,7 @@ export async function GET(request: Request) {
     const token = await generateMembraneToken(
       session.user.id,
       session.user.name,
+      session.user.email,
     );
 
     const url = new URL(`${API_URI}/agent/sessions/${sessionId}`);

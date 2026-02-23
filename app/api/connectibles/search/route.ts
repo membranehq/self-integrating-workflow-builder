@@ -216,6 +216,7 @@ export async function GET(request: Request) {
     const token = await generateMembraneToken(
       session.user.id,
       session.user.name,
+      session.user.email,
     );
 
     if (query) {

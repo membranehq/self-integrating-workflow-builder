@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { useEmailGate } from "@/hooks/use-email-gate";
 import { api } from "@/lib/api-client";
 import { authClient, useSession } from "@/lib/auth-client";
 import {
@@ -44,6 +45,7 @@ const Home = () => {
   const setIsTransitioningFromHomepage = useSetAtom(
     isTransitioningFromHomepageAtom
   );
+  const { ensureEmail } = useEmailGate();
   const hasCreatedWorkflowRef = useRef(false);
   const currentWorkflowName = useAtomValue(currentWorkflowNameAtom);
 
@@ -106,6 +108,7 @@ const Home = () => {
 
       try {
         await ensureSession();
+        await ensureEmail();
 
         // Create workflow with all real nodes
         const newWorkflow = await api.workflow.create({
@@ -129,7 +132,7 @@ const Home = () => {
     };
 
     createWorkflowAndRedirect();
-  }, [nodes, edges, router, ensureSession, setIsTransitioningFromHomepage]);
+  }, [nodes, edges, router, ensureSession, ensureEmail, setIsTransitioningFromHomepage]);
 
   // Canvas and toolbar are rendered by PersistentCanvas in the layout
   return null;

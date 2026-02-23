@@ -62,7 +62,8 @@ export async function POST(request: Request) {
     try {
       token = await generateMembraneToken(
         service.userId,
-        user?.name || undefined
+        user?.name || undefined,
+        user?.email || undefined
       );
     } catch (error) {
       if (error instanceof MembraneTokenError) {

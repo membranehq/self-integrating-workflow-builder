@@ -94,9 +94,24 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to update user:", error);
+
+    // Detect unique constraint violation on email
+    const message =
+      error instanceof Error ? error.message : String(error);
+    if (
+      message.includes("UNIQUE constraint failed") ||
+      message.includes("unique constraint") ||
+      message.includes("duplicate key")
+    ) {
+      return NextResponse.json(
+        { error: "This email is already in use. Please try a different one." },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to update user",
+        error: message || "Failed to update user",
       },
       { status: 500 }
     );

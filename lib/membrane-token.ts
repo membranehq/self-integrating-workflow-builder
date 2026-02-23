@@ -9,7 +9,8 @@ export class MembraneTokenError extends Error {
 
 export async function generateMembraneToken(
   userId: string,
-  userName?: string
+  userName?: string,
+  userEmail?: string
 ): Promise<string> {
   const workspaceKey = process.env.MEMBRANE_WORKSPACE_KEY;
   const workspaceSecret = process.env.MEMBRANE_WORKSPACE_SECRET;
@@ -23,8 +24,8 @@ export async function generateMembraneToken(
   const secret = new TextEncoder().encode(workspaceSecret);
 
   return new SignJWT({
-    id: userId,
-    name: userName || userId,
+    id: userEmail || userId,
+    name: userName || userEmail || userId,
     isAdmin: 0,
   })
     .setProtectedHeader({ alg: "HS512" })

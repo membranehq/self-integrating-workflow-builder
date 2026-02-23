@@ -17,7 +17,8 @@ export async function GET(request: Request) {
 
     const token = await generateMembraneToken(
       session.user.id,
-      session.user.name
+      session.user.name,
+      session.user.email
     );
 
     return NextResponse.json({ token });
