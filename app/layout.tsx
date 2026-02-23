@@ -5,6 +5,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Provider } from "jotai";
 import type { ReactNode } from "react";
+import { EmailGate } from "@/components/auth/email-gate";
 import { AuthProvider } from "@/components/auth/provider";
 import { GlobalModals } from "@/components/global-modals";
 import { OverlayProvider } from "@/components/overlays/overlay-provider";
@@ -53,13 +54,15 @@ const RootLayout = ({ children }: RootLayoutProps) => (
       >
         <Provider>
           <AuthProvider>
-            <MembraneProvider>
-              <OverlayProvider>
-                <LayoutContent>{children}</LayoutContent>
-                <Toaster />
-                <GlobalModals />
-              </OverlayProvider>
-            </MembraneProvider>
+            <EmailGate>
+              <MembraneProvider>
+                <OverlayProvider>
+                  <LayoutContent>{children}</LayoutContent>
+                  <Toaster />
+                  <GlobalModals />
+                </OverlayProvider>
+              </MembraneProvider>
+            </EmailGate>
           </AuthProvider>
         </Provider>
       </ThemeProvider>

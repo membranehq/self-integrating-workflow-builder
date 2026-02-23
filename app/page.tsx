@@ -5,9 +5,7 @@ import { nanoid } from "nanoid";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { useEmailGate } from "@/hooks/use-email-gate";
 import { api } from "@/lib/api-client";
-import { authClient, useSession } from "@/lib/auth-client";
 import {
   currentWorkflowNameAtom,
   edgesAtom,
@@ -35,7 +33,6 @@ function createDefaultTriggerNode() {
 
 const Home = () => {
   const router = useRouter();
-  const { data: session } = useSession();
   const nodes = useAtomValue(nodesAtom);
   const edges = useAtomValue(edgesAtom);
   const setNodes = useSetAtom(nodesAtom);
@@ -45,7 +42,6 @@ const Home = () => {
   const setIsTransitioningFromHomepage = useSetAtom(
     isTransitioningFromHomepageAtom
   );
-  const { ensureEmail } = useEmailGate();
   const hasCreatedWorkflowRef = useRef(false);
   const currentWorkflowName = useAtomValue(currentWorkflowNameAtom);
 
@@ -59,22 +55,13 @@ const Home = () => {
     document.title = `${currentWorkflowName} - AI Workflow Builder`;
   }, [currentWorkflowName]);
 
-  // Helper to create anonymous session if needed
-  const ensureSession = useCallback(async () => {
-    if (!session) {
-      await authClient.signIn.anonymous();
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-  }, [session]);
-
   // Handler to add the first node (replaces the "add" node)
-  const handleAddNode = useCallback(async () => {
-    await ensureSession();
-    await ensureEmail();
+  // Session and email are already guaranteed by EmailGate in the layout
+  const handleAddNode = useCallback(() => {
     const newNode: WorkflowNode = createDefaultTriggerNode();
     // Replace all nodes (removes the "add" node)
     setNodes([newNode]);
-  }, [setNodes, ensureSession, ensureEmail]);
+  }, [setNodes]);
 
   // Initialize with a temporary "add" node on mount
   useEffect(() => {
@@ -109,7 +96,6 @@ const Home = () => {
       hasCreatedWorkflowRef.current = true;
 
       try {
-        // Session and email are already ensured in handleAddNode
         // Create workflow with all real nodes
         const newWorkflow = await api.workflow.create({
           name: "Untitled Workflow",
