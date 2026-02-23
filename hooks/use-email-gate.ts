@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { useSession } from "@/lib/auth-client";
+import { authClient } from "@/lib/auth-client";
 import { EmailCollectionOverlay } from "@/components/overlays/email-collection-overlay";
 import { useOverlay } from "@/components/overlays/overlay-provider";
 
@@ -12,15 +12,17 @@ function hasRealEmail(email?: string | null): boolean {
 }
 
 export function useEmailGate() {
-  const { data: session } = useSession();
   const { open } = useOverlay();
   const collectedRef = useRef(false);
 
-  const ensureEmail = useCallback((): Promise<void> => {
-    if (collectedRef.current) return Promise.resolve();
+  const ensureEmail = useCallback(async (): Promise<void> => {
+    if (collectedRef.current) return;
+
+    // Fetch fresh session from the server to avoid stale closure issues
+    const { data: session } = await authClient.getSession();
     if (hasRealEmail(session?.user?.email)) {
       collectedRef.current = true;
-      return Promise.resolve();
+      return;
     }
 
     return new Promise<void>((resolve) => {
@@ -38,7 +40,7 @@ export function useEmailGate() {
         },
       );
     });
-  }, [session, open]);
+  }, [open]);
 
   return { ensureEmail };
 }
