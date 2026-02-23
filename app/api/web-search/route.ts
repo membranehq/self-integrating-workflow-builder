@@ -59,6 +59,10 @@ export async function GET(request: Request) {
 
     const results = parseSearchResults(content);
 
+    if (results.length === 0 && content.length > 0) {
+      console.warn("[Web Search] Failed to parse non-empty response:", content.slice(0, 500));
+    }
+
     return NextResponse.json({ results });
   } catch (error) {
     console.error("[Web Search] Error:", error);
@@ -68,7 +72,9 @@ export async function GET(request: Request) {
 
 function parseSearchResults(content: string): WebSearchApp[] {
   try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    // Strip markdown fences if present
+    const cleaned = content.replace(/```(?:json)?\s*/g, "").replace(/```\s*/g, "");
+    const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return [];
 
     const parsed = JSON.parse(jsonMatch[0]);
