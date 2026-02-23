@@ -64,7 +64,7 @@ async function runMembraneAction(
     // Call the API route which handles SDK/DB/token internally
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
-      `http://localhost:${process.env.PORT || 3000}`;
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${process.env.PORT || 3000}`);
     const response = await fetch(`${baseUrl}/api/membrane/actions/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
