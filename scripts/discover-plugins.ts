@@ -535,11 +535,6 @@ async function processStepFilesForCodegen(): Promise<void> {
 function generateCodegenRegistry(): void {
   const entries = Array.from(generatedCodegenTemplates.entries());
 
-  if (entries.length === 0) {
-    console.log("No codegen templates generated");
-    return;
-  }
-
   // Generate template string literals
   const templateEntries = entries
     .map(([actionId, { template }]) => {
