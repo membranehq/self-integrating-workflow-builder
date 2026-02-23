@@ -869,7 +869,7 @@ function InlineServiceSearch() {
                       </button>
                     ))}
                     {/* Build from scratch — always last in the grid */}
-                    {webResults.length > 0 && (
+                    {!isWebSearchLoading && (
                       <button
                         className="relative flex flex-col items-center gap-1 rounded-lg border-2 border-dashed border-purple-300 p-3 transition-colors hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/20"
                         onClick={handleBuildIntegration}
