@@ -4,8 +4,6 @@
  * without code generation or eval()
  */
 
-import type { generateImageStep } from "../../plugins/ai-gateway/steps/generate-image";
-import type { generateTextStep } from "../../plugins/ai-gateway/steps/generate-text";
 import type { conditionStep } from "./condition";
 import type { databaseQueryStep } from "./database-query";
 import type { httpRequestStep } from "./http-request";
@@ -27,14 +25,6 @@ export const stepRegistry: Record<string, StepFunction> = {
     (await import("./condition")).conditionStep(
       input as Parameters<typeof conditionStep>[0],
     ),
-  "Generate Text": async (input) =>
-    (
-      await import("../../plugins/ai-gateway/steps/generate-text")
-    ).generateTextStep(input as Parameters<typeof generateTextStep>[0]),
-  "Generate Image": async (input) =>
-    (
-      await import("../../plugins/ai-gateway/steps/generate-image")
-    ).generateImageStep(input as Parameters<typeof generateImageStep>[0]),
 };
 
 // Helper to check if a step exists
