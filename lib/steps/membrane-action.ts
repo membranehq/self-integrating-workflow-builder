@@ -61,26 +61,17 @@ async function runMembraneAction(
   const actionInput = extractMembraneInput(input);
 
   try {
-    // Call the API route which handles SDK/DB/token internally
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${process.env.PORT || 3000}`);
-    const response = await fetch(`${baseUrl}/api/membrane/actions/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ serviceId, actionKey, input: actionInput }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || data.error) {
-      return {
-        success: false,
-        error: data.error || `Membrane action failed (${response.status})`,
-      };
-    }
-
-    return { success: true, data: data.output };
+    // Import and call the run logic directly (server-side only).
+    // This avoids HTTP round-trips to self which break on Vercel due to URL mismatches.
+    const { runMembraneActionDirect } = await import(
+      "@/lib/membrane-action-runner"
+    );
+    const result = await runMembraneActionDirect(
+      serviceId,
+      actionKey,
+      actionInput
+    );
+    return result;
   } catch (error) {
     return {
       success: false,

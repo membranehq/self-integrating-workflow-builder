@@ -1,21 +1,9 @@
-import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { IntegrationAppClient } from "@membranehq/sdk";
-import { db } from "@/lib/db";
-import { membraneServices, users } from "@/lib/db/schema";
-import {
-  generateMembraneToken,
-  MembraneTokenError,
-} from "@/lib/membrane-token";
-
-const API_URI =
-  process.env.NEXT_PUBLIC_INTEGRATION_APP_API_URL ||
-  "https://api.integration.app";
+import { runMembraneActionDirect } from "@/lib/membrane-action-runner";
 
 /**
  * POST /api/membrane/actions/run
  * Executes a Membrane action server-side via the SDK.
- * Called internally by the workflow executor's membrane-action step.
  *
  * Body: { serviceId, actionKey, input }
  */
@@ -31,60 +19,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // Look up the membrane service
-    const service = await db.query.membraneServices.findFirst({
-      where: eq(membraneServices.id, serviceId),
-    });
+    const result = await runMembraneActionDirect(
+      serviceId,
+      actionKey,
+      input || {}
+    );
 
-    if (!service) {
-      return NextResponse.json(
-        { error: `Membrane service not found: ${serviceId}` },
-        { status: 404 }
-      );
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
     }
-
-    if (!service.connectionId) {
-      return NextResponse.json(
-        {
-          error: `No connection established for ${service.name}. Please connect your account first.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Look up the user for the token
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, service.userId),
-    });
-
-    // Generate JWT token
-    let token: string;
-    try {
-      token = await generateMembraneToken(
-        service.userId,
-        user?.name || undefined,
-        user?.email || undefined
-      );
-    } catch (error) {
-      if (error instanceof MembraneTokenError) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-      return NextResponse.json(
-        { error: "Failed to generate Membrane token" },
-        { status: 500 }
-      );
-    }
-
-    // Create SDK client and run the action
-    const client = new IntegrationAppClient({ token, apiUri: API_URI });
-
-    const result = await client
-      .action(actionKey)
-      .run(input || {}, { connectionId: service.connectionId });
 
     return NextResponse.json({
       success: true,
-      output: result.output ?? result,
+      output: result.data,
     });
   } catch (error) {
     console.error("[Membrane Action Run] Error:", error);
