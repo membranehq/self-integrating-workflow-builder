@@ -41,7 +41,7 @@ const PLUGINS_MARKER_REGEX =
   /<!-- PLUGINS:START[^>]*-->[\s\S]*?<!-- PLUGINS:END -->/;
 
 // System integrations that don't have plugins
-const SYSTEM_INTEGRATION_TYPES = ["database"] as const;
+const SYSTEM_INTEGRATION_TYPES = ["ai-gateway", "database"] as const;
 
 // Regex patterns for codegen template generation
 const LEADING_WHITESPACE_PATTERN = /^\s*/;
