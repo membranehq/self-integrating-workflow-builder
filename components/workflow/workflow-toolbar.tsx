@@ -1462,7 +1462,7 @@ export const WorkflowToolbar = ({ workflowId }: WorkflowToolbarProps) => {
             rel="noopener noreferrer"
             target="_blank"
           >
-            Powered by
+            <span className="hidden sm:inline">Powered by</span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               alt="Membrane"

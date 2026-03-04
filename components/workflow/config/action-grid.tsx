@@ -798,7 +798,7 @@ function InlineServiceSearch() {
                       <span className="w-full truncate text-center text-xs">
                         {connectible.name}
                       </span>
-                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-foreground/80 font-medium text-background text-sm opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="pointer-events-none absolute inset-0 hidden items-center justify-center rounded-lg bg-foreground/80 font-medium text-background text-sm opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
                         Connect
                       </div>
                     </button>
